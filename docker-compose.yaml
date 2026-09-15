@@ -23,9 +23,11 @@ services:
       ESOCIAL_LLM_MODEL: gemma4:12b
     volumes:
       - .:/app
+      - corpus_data:/app/data/corpus
     depends_on:
       db:
         condition: service_healthy
 
 volumes:
   postgres_data:
+  corpus_data:

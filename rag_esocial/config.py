@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     app_name: str = "rag-esocial"
     app_version: str = "0.1.0"
     llm_model: str = "gemma4:12b"
+    corpus_storage_path: str = "/app/data/corpus"
 
 
 @lru_cache
