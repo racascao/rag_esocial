@@ -33,10 +33,10 @@ docker compose exec app uv run pytest
 
 ## Estado e roadmap
 
-Fase 0 fornece Typer + Rich, configuração tipada, logging, SQLAlchemy/Alembic, PostgreSQL e testes. Fase 1 fornece `DocumentVersion`, `DocumentArtifact`, `CorpusSnapshot`, `SnapshotMember`, armazenamento persistente de raw artifacts, SHA-256, inventário de ZIP e manifesto canônico. O snapshot inicial permanece DRAFT até os cinco papéis obrigatórios serem adquiridos e verificados; nenhum freeze real foi feito.
+Fase 0 fornece Typer + Rich, configuração tipada, logging, SQLAlchemy/Alembic, PostgreSQL e testes. Fase 1 fornece provenance física, hashes, snapshots e freeze. Fase 2 fornece `CorpusBuild`, registries de `CitationTarget` e `CanonicalEntity`, identidades determinísticas e o validador único de membership. O snapshot inicial permanece DRAFT até os cinco papéis obrigatórios serem adquiridos e verificados; nenhum freeze real foi feito.
 
 Para importação manual autorizada, use `esocial corpus artifact import --role ... --file ... --official-url ... --version-label ... --title ... --family ...`. O volume `corpus_data` não é versionado no Git.
 
-Ainda não existem ingestão semântica, parsers MOS/Leiaute/XSD, CorpusBuild, retrieval, Evidence Assembly, resolução de fatos, embeddings, RAG, prompts, answerer, avaliação DEV ou integração com LLM.
+Ainda não existem ingestão semântica, parsers MOS/Leiaute/XSD, retrieval, Evidence Assembly, resolução de fatos, embeddings, RAG, prompts, answerer, avaliação DEV ou integração com LLM. `SearchProjection` permanece reservada para a Fase 5.
 
 Próximas fases: corpus e proveniência; parsing/modelagem; unidades de busca e evidência; resolução determinística; síntese restrita por evidência; avaliação.

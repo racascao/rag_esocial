@@ -9,6 +9,7 @@ from rich.table import Table
 from sqlalchemy import select
 
 from . import __version__
+from .build_service import create_build
 from .config import get_settings
 from .corpus import (
     freeze_snapshot,
@@ -19,6 +20,7 @@ from .corpus import (
 )
 from .db import check_connection, session_factory
 from .logging_config import configure_logging
+from .models.build import CorpusBuild
 from .models.corpus import (
     CorpusSnapshot,
     DocumentArtifact,
@@ -33,6 +35,8 @@ corpus_app = typer.Typer(help="Aquisição, provenance e snapshots do corpus.")
 app.add_typer(corpus_app, name="corpus")
 artifact_app = typer.Typer(help="Importação manual genérica de artefatos oficiais.")
 corpus_app.add_typer(artifact_app, name="artifact")
+build_app = typer.Typer(help="Materializações reproduzíveis de snapshots congelados.")
+app.add_typer(build_app, name="build")
 console = Console()
 
 
@@ -192,3 +196,37 @@ def artifact_import(
         )
         session.commit()
     console.print(f"Artefato importado: {role} ({artifact.sha256})")
+
+
+@build_app.command("create")
+def build_create(
+    snapshot: str = typer.Option(...),
+    parser_revision: str = typer.Option(...),
+    parser_config: Path | None = typer.Option(None, exists=True, dir_okay=False),
+) -> None:
+    import json
+
+    config = json.loads(parser_config.read_text()) if parser_config else {}
+    with session_factory()() as session:
+        try:
+            build = create_build(session, snapshot, parser_revision, config)
+        except ValueError as error:
+            console.print(f"Build recusado: {error}")
+            raise typer.Exit(code=1) from error
+    console.print(f"Build: {build.id}")
+    console.print(f"Digest: {build.build_digest}")
+
+
+@build_app.command("status")
+def build_status(snapshot: str = typer.Option(...)) -> None:
+    with session_factory()() as session:
+        builds = session.scalars(
+            select(CorpusBuild)
+            .join(CorpusBuild.snapshot)
+            .where(CorpusBuild.snapshot.has(slug=snapshot))
+        ).all()
+        if not builds:
+            console.print("Nenhum build encontrado")
+            raise typer.Exit(code=1)
+        for build in builds:
+            console.print(f"{build.id} {build.status} {build.build_digest}")

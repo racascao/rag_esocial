@@ -9,4 +9,9 @@
 - Preservar proveniência e auditabilidade.
 - Atualizar README ao fim de fases que alterem estado, funcionalidades ou roadmap.
 - Não fazer commit, push ou tag.
-
+- `CorpusSnapshot` é diferente de `CorpusBuild`; build real exige snapshot congelado.
+- `CitationTarget` é diferente de `CanonicalEntity`; CitationIdentity não inclui build ou snapshot.
+- Nunca usar página, linha ou índice posicional como identidade estável de citação.
+- Apresentação humana não faz parte da identidade estável.
+- Reutilizar o único `SNAPSHOT_MEMBERSHIP_VALIDITY`; não duplicar o predicado.
+- `SearchProjection` não pertence ao `CorpusBuild`; não antecipar parser ou retrieval.
