@@ -1,0 +1,17 @@
+README.md
+pyproject.toml
+rag_esocial/__init__.py
+rag_esocial/cli.py
+rag_esocial/config.py
+rag_esocial/db.py
+rag_esocial/logging_config.py
+rag_esocial.egg-info/PKG-INFO
+rag_esocial.egg-info/SOURCES.txt
+rag_esocial.egg-info/dependency_links.txt
+rag_esocial.egg-info/entry_points.txt
+rag_esocial.egg-info/requires.txt
+rag_esocial.egg-info/top_level.txt
+rag_esocial/models/__init__.py
+tests/test_architecture.py
+tests/test_cli.py
+tests/test_config.py

@@ -1,0 +1,2 @@
+[console_scripts]
+esocial = rag_esocial.cli:app
