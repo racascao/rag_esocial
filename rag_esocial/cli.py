@@ -6,7 +6,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 from rich.table import Table
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from . import __version__
 from .build_service import create_build
@@ -19,6 +19,8 @@ from .corpus import (
     verify_snapshot,
 )
 from .db import check_connection, session_factory
+from .layout_materializer import materialize_layout
+from .layout_parser import parse_layout_html
 from .logging_config import configure_logging
 from .models.build import CorpusBuild
 from .models.corpus import (
@@ -27,6 +29,7 @@ from .models.corpus import (
     DocumentVersion,
     SnapshotMember,
 )
+from .models.layout import LayoutDocument
 from .models.mos import MosDocument
 from .mos_materializer import materialize_mos
 from .mos_parser import parse_mos_text
@@ -43,6 +46,8 @@ build_app = typer.Typer(help="Materializações reproduzíveis de snapshots cong
 app.add_typer(build_app, name="build")
 mos_app = typer.Typer(help="Parser estrutural do MOS.")
 app.add_typer(mos_app, name="mos")
+layout_app = typer.Typer(help="Parser estrutural do Leiaute.")
+app.add_typer(layout_app, name="layout")
 console = Console()
 
 
@@ -304,3 +309,62 @@ def mos_status(build: str = typer.Option(..., "--build")) -> None:
         ).all()
         console.print(f"Build: {target_build.id}")
         console.print(f"Materializado: {'sim' if documents else 'não'}")
+
+
+@layout_app.command("parse")
+def layout_parse(build: str = typer.Option(..., "--build")) -> None:
+    with session_factory()() as session:
+        target_build = resolve_build(session, build)
+        if not target_build:
+            console.print("Build não encontrado")
+            raise typer.Exit(code=1)
+        artifact = session.scalar(
+            select(DocumentArtifact).where(
+                DocumentArtifact.artifact_role == "LAYOUT_MAIN",
+                DocumentArtifact.document_version_id.in_(
+                    select(SnapshotMember.document_version_id).where(
+                        SnapshotMember.snapshot_id == target_build.corpus_snapshot_id
+                    )
+                ),
+            )
+        )
+        version = (
+            session.get(DocumentVersion, artifact.document_version_id)
+            if artifact
+            else None
+        )
+        if not artifact or not version:
+            console.print("LAYOUT_MAIN não encontrado no snapshot do build")
+            raise typer.Exit(code=1)
+        html = (storage_root() / artifact.storage_path).read_text()
+        result = parse_layout_html(html)
+        try:
+            document, created = materialize_layout(
+                session, target_build, version, artifact, result
+            )
+            session.commit()
+        except Exception as error:
+            session.rollback()
+            console.print(f"Falha na materialização: {error}")
+            raise typer.Exit(code=1) from error
+        status = "materializado" if created else "já materializado"
+        console.print(f"Leiaute {status}: {document.id}")
+        console.print(
+            f"Eventos: {len(result.events)} | Referências: {len(result.references)}"
+        )
+
+
+@layout_app.command("status")
+def layout_status(build: str = typer.Option(..., "--build")) -> None:
+    with session_factory()() as session:
+        target_build = resolve_build(session, build)
+        if not target_build:
+            console.print("Build não encontrado")
+            raise typer.Exit(code=1)
+        count = session.scalar(
+            select(func.count())
+            .select_from(LayoutDocument)
+            .where(LayoutDocument.corpus_build_id == target_build.id)
+        )
+        console.print(f"Build: {target_build.id}")
+        console.print(f"Materializado: {'sim' if count else 'não'}")

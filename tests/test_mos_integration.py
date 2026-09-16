@@ -8,6 +8,7 @@ from pypdf import PdfWriter
 from pypdf.generic import DictionaryObject, NameObject, StreamObject
 from sqlalchemy import delete, func, select
 
+import rag_esocial.layout_materializer as layout_materializer_module
 import rag_esocial.mos_materializer as mos_materializer_module
 from rag_esocial.build_service import create_build
 from rag_esocial.corpus import (
@@ -17,6 +18,8 @@ from rag_esocial.corpus import (
     verify_snapshot,
 )
 from rag_esocial.db import session_factory
+from rag_esocial.layout_materializer import materialize_layout
+from rag_esocial.layout_parser import parse_layout_html
 from rag_esocial.models.build import (
     CitationTarget,
     CorpusBuild,
@@ -30,6 +33,12 @@ from rag_esocial.models.corpus import (
     DocumentFamily,
     DocumentVersion,
     SnapshotMember,
+)
+from rag_esocial.models.layout import (
+    LayoutDocument,
+    LayoutEvent,
+    LayoutField,
+    LayoutGroup,
 )
 from rag_esocial.models.mos import (
     ContentBlock,
@@ -104,7 +113,15 @@ def build_fixture(tmp_path: Path):
         ArtifactRole.LAYOUT_ANNEX_I_DOMAIN_TABLES.value: tmp_path / "annex-i.txt",
         ArtifactRole.LAYOUT_ANNEX_II_VALIDATION_RULES.value: tmp_path / "annex-ii.txt",
     }
-    payloads[ArtifactRole.LAYOUT_MAIN.value].write_text("<html>fixture</html>")
+    payloads[ArtifactRole.LAYOUT_MAIN.value].write_text(
+        """<section data-kind='event' code='S-9999' title='Evento Layout Fixture'>
+<div data-kind='group' name='info' level='1' description='Grupo raiz'>
+<div data-kind='group' name='dados' level='2' description='Grupo aninhado'>
+<div data-kind='group' name='detalhe' level='3'>
+<p data-kind='field' name='aliqRat' type='N' occurrence='1-1' size='5'
+condition='REGRA_LAYOUT'>Descrição REGRA_LAYOUT e Tabela 05</p>
+</div></div></div></section>"""
+    )
     payloads[ArtifactRole.LAYOUT_ANNEX_I_DOMAIN_TABLES.value].write_text("Tabela 01")
     payloads[ArtifactRole.LAYOUT_ANNEX_II_VALIDATION_RULES.value].write_text(
         "REGRA_FIXTURE"
@@ -220,6 +237,10 @@ def build_fixture(tmp_path: Path):
 
 def cleanup(session, ids):
     for model in [
+        LayoutField,
+        LayoutGroup,
+        LayoutEvent,
+        LayoutDocument,
         ExplicitReference,
         ContentBlock,
         MosEventSubitem,
@@ -406,6 +427,171 @@ def test_mos_materialization_rolls_back_after_intermediate_failure(
         assert session.get(CorpusSnapshot, snapshot_id).frozen_at is not None
         assert session.get(CorpusBuild, build_id) is not None
         assert session.get(DocumentArtifact, artifact_id) is not None
+    finally:
+        session.rollback()
+        cleanup(session, ids)
+        session.close()
+
+
+def test_layout_postgres_e2e_idempotency_origins_two_builds_and_rollback(
+    tmp_path: Path, monkeypatch
+) -> None:
+    session, snapshot, build, _mos_version, _mos_artifact, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    build_id = build.id
+    snapshot_id = snapshot.id
+    layout_artifact = session.scalar(
+        select(DocumentArtifact).where(
+            DocumentArtifact.artifact_role == ArtifactRole.LAYOUT_MAIN.value
+        )
+    )
+    layout_version = session.get(DocumentVersion, layout_artifact.document_version_id)
+    try:
+        html = (storage_root() / layout_artifact.storage_path).read_text()
+        result = parse_layout_html(html)
+        document, created = materialize_layout(
+            session, build, layout_version, layout_artifact, result
+        )
+        session.commit()
+        assert created
+        session.expunge_all()
+        persisted = session.scalar(
+            select(LayoutDocument).where(LayoutDocument.id == document.id)
+        )
+        assert persisted and persisted.corpus_build_id == build_id
+        event = session.scalar(
+            select(LayoutEvent).where(LayoutEvent.layout_document_id == document.id)
+        )
+        groups = session.scalars(
+            select(LayoutGroup).where(LayoutGroup.layout_event_id == event.id)
+        ).all()
+        field = session.scalar(
+            select(LayoutField).where(LayoutField.technical_name == "aliqRat")
+        )
+        assert event.event_code == "S-9999"
+        assert len(groups) == 3 and field.source_local_stable_path.endswith("/aliqRat")
+        targets = session.scalars(
+            select(CitationTarget).where(CitationTarget.document_family == "LAYOUT")
+        ).all()
+        target_by_path = {target.source_local_stable_path: target for target in targets}
+        assert (
+            target_by_path["LAYOUT/S-9999/info/dados/detalhe/aliqRat"].locator_metadata[
+                "source"
+            ]
+            == "html"
+        )
+        refs = session.scalars(
+            select(ExplicitReference).where(
+                ExplicitReference.corpus_build_id == build_id
+            )
+        ).all()
+        assert refs and all(ref.resolution_status == "UNRESOLVED" for ref in refs)
+        assert {
+            session.get(
+                CitationTarget, ref.origin_citation_target_id
+            ).source_local_stable_path
+            for ref in refs
+        } == {"LAYOUT/S-9999/info/dados/detalhe/aliqRat"}
+        before = {
+            model.__name__: count_rows(session, model)
+            for model in [
+                LayoutDocument,
+                LayoutEvent,
+                LayoutGroup,
+                LayoutField,
+                ExplicitReference,
+                CitationTarget,
+                CorpusBuildCitationTarget,
+            ]
+        }
+        _, created_again = materialize_layout(
+            session, build, layout_version, layout_artifact, result
+        )
+        session.commit()
+        after = {
+            model.__name__: count_rows(session, model)
+            for model in [
+                LayoutDocument,
+                LayoutEvent,
+                LayoutGroup,
+                LayoutField,
+                ExplicitReference,
+                CitationTarget,
+                CorpusBuildCitationTarget,
+            ]
+        }
+        assert not created_again and before == after
+        build2 = create_build(session, snapshot.slug, "layout-parser-test-v2", {})
+        ids["builds"].append(build2.id)
+        document2, created2 = materialize_layout(
+            session, build2, layout_version, layout_artifact, result
+        )
+        session.commit()
+        assert created2 and document2.id != document.id
+        shared = session.scalars(
+            select(CitationTarget).where(
+                CitationTarget.stable_key
+                == target_by_path["LAYOUT/S-9999/info/dados/detalhe/aliqRat"].stable_key
+            )
+        ).all()
+        assert len(shared) == 1
+        assert (
+            len(
+                session.scalars(
+                    select(CorpusBuildCitationTarget).where(
+                        CorpusBuildCitationTarget.citation_target_id == shared[0].id
+                    )
+                ).all()
+            )
+            == 2
+        )
+        preexisting_id = shared[0].id
+        session.close()
+        session = session_factory()()
+        calls = 0
+        original = layout_materializer_module.associate_citation_target
+
+        def fail_after_partial(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("injected layout failure")
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(
+            layout_materializer_module, "associate_citation_target", fail_after_partial
+        )
+        build3 = create_build(session, snapshot.slug, "layout-parser-test-v3", {})
+        ids["builds"].append(build3.id)
+        build3_id = build3.id
+        result3 = parse_layout_html(html)
+        try:
+            materialize_layout(
+                session, build3, layout_version, layout_artifact, result3
+            )
+        except RuntimeError:
+            session.rollback()
+        else:
+            raise AssertionError("injected layout failure was not observed")
+        session.close()
+        session = session_factory()()
+        assert (
+            session.scalar(
+                select(LayoutDocument.id).where(
+                    LayoutDocument.corpus_build_id == build3_id
+                )
+            )
+            is None
+        )
+        assert (
+            session.scalar(
+                select(CitationTarget.id).where(CitationTarget.id == preexisting_id)
+            )
+            == preexisting_id
+        )
+        assert session.get(CorpusSnapshot, snapshot_id).frozen_at is not None
+        assert session.get(CorpusBuild, build_id) is not None
+        assert session.get(DocumentArtifact, layout_artifact.id) is not None
     finally:
         session.rollback()
         cleanup(session, ids)

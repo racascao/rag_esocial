@@ -33,10 +33,10 @@ docker compose exec app uv run pytest
 
 ## Estado e roadmap
 
-Fase 0 fornece Typer + Rich, configuração tipada, logging, SQLAlchemy/Alembic, PostgreSQL e testes. Fase 1 fornece provenance física, hashes, snapshots e freeze. Fase 2 fornece `CorpusBuild`, registries de `CitationTarget` e `CanonicalEntity`, identidades determinísticas e o validador único de membership. A Fase 3A está concluída tecnicamente: parser estrutural MOS, extração PDF textual com `pypdf`, materializer transacional, CitationTargets, referências D2 unresolved e harness E2E em PostgreSQL com freeze, idempotência, rollback e reuso entre builds. O snapshot oficial inicial permanece DRAFT; nenhum freeze real foi feito.
+Fase 0 fornece Typer + Rich, configuração tipada, logging, SQLAlchemy/Alembic, PostgreSQL e testes. Fase 1 fornece provenance física, hashes, snapshots e freeze. Fase 2 fornece `CorpusBuild`, registries de `CitationTarget` e `CanonicalEntity`, identidades determinísticas e o validador único de membership. A Fase 3A está concluída tecnicamente: parser estrutural MOS, extração PDF textual com `pypdf`, materializer transacional, CitationTargets, referências D2 unresolved e harness E2E em PostgreSQL. A Fase 3B está concluída tecnicamente para `LAYOUT_MAIN`: parser HTML estrutural Event/Group/Field, materialização, provenance, idempotência, rollback e E2E PostgreSQL. O snapshot oficial inicial permanece DRAFT; nenhum freeze real foi feito.
 
 Para importação manual autorizada, use `esocial corpus artifact import --role ... --file ... --official-url ... --version-label ... --title ... --family ...`. O volume `corpus_data` não é versionado no Git.
 
-Ainda não existem parser semântico de Leiaute/XSD, retrieval, Evidence Assembly, resolução de fatos, embeddings, RAG, prompts, answerer, avaliação DEV ou integração com LLM. `SearchProjection` permanece reservada para a Fase 5. A próxima etapa prevista é a Fase 3B — parser estrutural do Leiaute.
+Ainda não existe parser semântico XSD, retrieval, Evidence Assembly, resolução de fatos, embeddings, RAG, prompts, answerer, avaliação DEV ou integração com LLM. `SearchProjection` permanece reservada para a Fase 5. Anexos I/II não são parseados por falta de formato físico oficial confirmado no repositório.
 
 Próximas fases: corpus e proveniência; parsing/modelagem; unidades de busca e evidência; resolução determinística; síntese restrita por evidência; avaliação.
