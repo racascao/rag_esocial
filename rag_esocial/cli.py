@@ -19,6 +19,7 @@ from .corpus import (
     verify_snapshot,
 )
 from .db import check_connection, session_factory
+from .facts_service import build_facts
 from .layout_materializer import materialize_layout
 from .layout_parser import parse_layout_html
 from .logging_config import configure_logging
@@ -29,6 +30,7 @@ from .models.corpus import (
     DocumentVersion,
     SnapshotMember,
 )
+from .models.facts import EntityRelation, ReferenceResolution, ResolvedFact, SourceFact
 from .models.layout import LayoutDocument
 from .models.mos import MosDocument
 from .models.xsd import (
@@ -58,6 +60,8 @@ layout_app = typer.Typer(help="Parser estrutural do Leiaute.")
 app.add_typer(layout_app, name="layout")
 xsd_app = typer.Typer(help="Parser estrutural do pacote XSD.")
 app.add_typer(xsd_app, name="xsd")
+facts_app = typer.Typer(help="Fatos determinísticos e resolução de referências.")
+app.add_typer(facts_app, name="facts")
 console = Console()
 
 
@@ -439,3 +443,42 @@ def xsd_status(build: str = typer.Option(..., "--build")) -> None:
                     f"{label}: "
                     f"{session.scalar(select(func.count()).select_from(model)) or 0}"
                 )
+
+
+@facts_app.command("build")
+def facts_build(build: str = typer.Option(..., "--build")) -> None:
+    with session_factory()() as session:
+        target = resolve_build(session, build)
+        if not target:
+            raise typer.Exit(code=1)
+        try:
+            build_facts(session, target)
+            session.commit()
+        except Exception as error:
+            session.rollback()
+            console.print(f"Falha na materialização de fatos: {error}")
+            raise typer.Exit(code=1) from error
+        console.print(f"Fatos materializados para build {target.id}")
+
+
+@facts_app.command("status")
+def facts_status(build: str = typer.Option(..., "--build")) -> None:
+    with session_factory()() as session:
+        target = resolve_build(session, build)
+        if not target:
+            raise typer.Exit(code=1)
+        for label, model in (
+            ("SourceFacts", SourceFact),
+            ("ReferenceResolutions", ReferenceResolution),
+            ("EntityRelations", EntityRelation),
+            ("ResolvedFacts", ResolvedFact),
+        ):
+            count = (
+                session.scalar(
+                    select(func.count())
+                    .select_from(model)
+                    .where(model.corpus_build_id == target.id)
+                )
+                or 0
+            )
+            console.print(f"{label}: {count}")

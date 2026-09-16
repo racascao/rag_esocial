@@ -20,9 +20,11 @@ from rag_esocial.corpus import (
     verify_snapshot,
 )
 from rag_esocial.db import session_factory
+from rag_esocial.facts_service import build_facts
 from rag_esocial.layout_materializer import materialize_layout
 from rag_esocial.layout_parser import parse_layout_html
 from rag_esocial.models.build import (
+    CanonicalEntity,
     CitationTarget,
     CorpusBuild,
     CorpusBuildCitationTarget,
@@ -35,6 +37,12 @@ from rag_esocial.models.corpus import (
     DocumentFamily,
     DocumentVersion,
     SnapshotMember,
+)
+from rag_esocial.models.facts import (
+    EntityRelation,
+    ReferenceResolution,
+    ResolvedFact,
+    SourceFact,
 )
 from rag_esocial.models.layout import (
     LayoutDocument,
@@ -272,6 +280,10 @@ def cleanup(session, ids):
         XsdSharedType,
         XsdEventSchema,
         XsdPackageDocument,
+        SourceFact,
+        ReferenceResolution,
+        EntityRelation,
+        ResolvedFact,
         LayoutField,
         LayoutGroup,
         LayoutEvent,
@@ -544,6 +556,7 @@ def test_mos_materialization_rolls_back_after_intermediate_failure(
     ids["builds"].append(build.id)
     build_id = build.id
     snapshot_id = snapshot.id
+    snapshot_id = snapshot.id
     artifact_id = artifact.id
     try:
         pages = PdfTextExtractor().extract(storage_root() / artifact.storage_path).pages
@@ -779,5 +792,177 @@ def test_layout_postgres_e2e_idempotency_origins_two_builds_and_rollback(
         assert session.get(DocumentArtifact, layout_artifact.id) is not None
     finally:
         session.rollback()
+        cleanup(session, ids)
+        session.close()
+
+
+def materialize_phase4_fixture(session, build, snapshot):
+    mos_artifact = session.scalar(
+        select(DocumentArtifact).where(
+            DocumentArtifact.artifact_role == ArtifactRole.MOS_MAIN.value,
+            DocumentArtifact.document_version_id.in_(
+                select(SnapshotMember.document_version_id).where(
+                    SnapshotMember.snapshot_id == snapshot.id
+                )
+            ),
+        )
+    )
+    mos_version = session.get(DocumentVersion, mos_artifact.document_version_id)
+    pages = PdfTextExtractor().extract(storage_root() / mos_artifact.storage_path).pages
+    materialize_mos(
+        session,
+        build,
+        mos_version,
+        mos_artifact,
+        parse_mos_text("\n".join(page.text for page in pages)),
+    )
+    layout_artifact = session.scalar(
+        select(DocumentArtifact).where(
+            DocumentArtifact.artifact_role == ArtifactRole.LAYOUT_MAIN.value,
+            DocumentArtifact.document_version_id.in_(
+                select(SnapshotMember.document_version_id).where(
+                    SnapshotMember.snapshot_id == snapshot.id
+                )
+            ),
+        )
+    )
+    layout_version = session.get(DocumentVersion, layout_artifact.document_version_id)
+    materialize_layout(
+        session,
+        build,
+        layout_version,
+        layout_artifact,
+        parse_layout_html((storage_root() / layout_artifact.storage_path).read_text()),
+    )
+    xsd_artifact = session.scalar(
+        select(DocumentArtifact).where(
+            DocumentArtifact.artifact_role == ArtifactRole.XSD_PACKAGE.value,
+            DocumentArtifact.document_version_id.in_(
+                select(SnapshotMember.document_version_id).where(
+                    SnapshotMember.snapshot_id == snapshot.id
+                )
+            ),
+        )
+    )
+    xsd_version = session.get(DocumentVersion, xsd_artifact.document_version_id)
+    materialize_xsd(
+        session,
+        build,
+        xsd_version,
+        xsd_artifact,
+        parse_xsd_package(storage_root() / xsd_artifact.storage_path),
+    )
+
+
+def test_facts_e2e_postgresql(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        materialize_phase4_fixture(session, build, snapshot)
+        build_facts(session, build)
+        session.commit()
+        session.close()
+        session = session_factory()()
+        facts = session.scalars(
+            select(SourceFact).where(SourceFact.corpus_build_id == build.id)
+        ).all()
+        assert facts and {fact.extraction_kind for fact in facts} <= {"D1", "D2"}
+        assert any(fact.fact_type == "LAYOUT_TYPE" for fact in facts)
+        assert any(
+            fact.fact_type == "XSD_MAX_OCCURS" and fact.string_value == "unbounded"
+            for fact in facts
+        )
+        assert session.scalars(
+            select(ReferenceResolution).where(
+                ReferenceResolution.corpus_build_id == build.id
+            )
+        ).all()
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_facts_idempotency_postgresql(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        materialize_phase4_fixture(session, build, snapshot)
+        build_facts(session, build)
+        session.commit()
+        before = {
+            model: count_rows(session, model)
+            for model in (SourceFact, ReferenceResolution, EntityRelation, ResolvedFact)
+        }
+        build_facts(session, build)
+        session.commit()
+        assert before == {model: count_rows(session, model) for model in before}
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_facts_rollback_postgresql(tmp_path, monkeypatch):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    build_id = build.id
+    snapshot_id = snapshot.id
+    try:
+        materialize_phase4_fixture(session, build, snapshot)
+        session.commit()
+        import rag_esocial.facts_service as facts_module
+
+        original = facts_module._fact
+        calls = 0
+
+        def fail_after_partial(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("facts rollback")
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(facts_module, "_fact", fail_after_partial)
+        try:
+            build_facts(session, build)
+        except RuntimeError:
+            session.rollback()
+        session.close()
+        session = session_factory()()
+        assert not session.scalars(
+            select(SourceFact).where(SourceFact.corpus_build_id == build_id)
+        ).all()
+        assert session.get(CorpusSnapshot, snapshot_id).frozen_at
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_facts_two_builds_postgresql(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        materialize_phase4_fixture(session, build, snapshot)
+        build_facts(session, build)
+        session.commit()
+        build2 = create_build(session, snapshot.slug, "facts-parser-v2", {})
+        ids["builds"].append(build2.id)
+        materialize_phase4_fixture(session, build2, snapshot)
+        build_facts(session, build2)
+        session.commit()
+        entity = session.scalar(
+            select(CanonicalEntity).where(CanonicalEntity.stable_key == "EVENT:S-9999")
+        )
+        assert entity
+        assert session.scalar(
+            select(func.count())
+            .select_from(SourceFact)
+            .where(SourceFact.corpus_build_id == build.id)
+        )
+        assert session.scalar(
+            select(func.count())
+            .select_from(SourceFact)
+            .where(SourceFact.corpus_build_id == build2.id)
+        )
+    finally:
         cleanup(session, ids)
         session.close()

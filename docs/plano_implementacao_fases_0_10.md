@@ -6,6 +6,7 @@
 - Fase 3A: COMPLETE — parser estrutural MOS, PDF textual, materialização PostgreSQL transacional, tópicos/subitens, eventos, metadata e referências D2 unresolved; sem resolução, SourceFact ou SearchProjection.
 - Fase 3B: COMPLETE para `LAYOUT_MAIN` — parser HTML Event/Group/Field, materialização PostgreSQL, CitationTargets, referências D2 unresolved, idempotência, rollback e E2E; Anexos I/II permanecem não parseados por formato oficial ainda não confirmado.
 - Fase 3C: COMPLETE para `XSD_PACKAGE` — parser estrutural, materialização PostgreSQL, E2E em nova sessão, idempotência, rollback, provenance e B1/B2 com CitationTargets compartilhadas.
+- Fase 4: COMPLETE — SourceFacts D1/D2, CanonicalEntities transversais, resolução determinística de referências, relações auditáveis e validação PostgreSQL; próxima Fase 5: SearchProjection + baseline FTS.
 - Fase 3: identidade determinística, incluindo tipos compartilhados `T_*/TS_*`.
 - Fase 4: fatos e travessia D3; `FactType` não é D1/D2/D3.
 - Fase 5: `SearchProjection` e `SearchUnit`, distintos de `CitationTarget`.
