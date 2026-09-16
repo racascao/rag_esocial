@@ -59,5 +59,5 @@ def associate_citation_target(
         build_id=build.id, citation_target_id=target.id
     )
     session.add(association)
-    session.commit()
+    session.flush()
     return association

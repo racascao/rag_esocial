@@ -27,6 +27,10 @@ from .models.corpus import (
     DocumentVersion,
     SnapshotMember,
 )
+from .models.mos import MosDocument
+from .mos_materializer import materialize_mos
+from .mos_parser import parse_mos_text
+from .pdf_text import PdfTextExtractor
 
 app = typer.Typer(help="Fundação CLI do assistente RAG eSocial.", no_args_is_help=True)
 db_app = typer.Typer(help="Comandos de infraestrutura do banco.")
@@ -37,6 +41,8 @@ artifact_app = typer.Typer(help="Importação manual genérica de artefatos ofic
 corpus_app.add_typer(artifact_app, name="artifact")
 build_app = typer.Typer(help="Materializações reproduzíveis de snapshots congelados.")
 app.add_typer(build_app, name="build")
+mos_app = typer.Typer(help="Parser estrutural do MOS.")
+app.add_typer(mos_app, name="mos")
 console = Console()
 
 
@@ -230,3 +236,71 @@ def build_status(snapshot: str = typer.Option(...)) -> None:
             raise typer.Exit(code=1)
         for build in builds:
             console.print(f"{build.id} {build.status} {build.build_digest}")
+
+
+def resolve_build(session, value: str) -> CorpusBuild | None:
+    return session.scalar(
+        select(CorpusBuild).where(
+            (CorpusBuild.id == value) | (CorpusBuild.build_digest == value)
+        )
+    )
+
+
+@mos_app.command("parse")
+def mos_parse(build: str = typer.Option(..., "--build")) -> None:
+    with session_factory()() as session:
+        target_build = resolve_build(session, build)
+        if not target_build:
+            console.print("Build não encontrado")
+            raise typer.Exit(code=1)
+        artifact = session.scalar(
+            select(DocumentArtifact).where(
+                DocumentArtifact.document_version_id.in_(
+                    select(SnapshotMember.document_version_id).where(
+                        SnapshotMember.snapshot_id == target_build.corpus_snapshot_id
+                    )
+                ),
+                DocumentArtifact.artifact_role == "MOS_MAIN",
+            )
+        )
+        version = (
+            session.get(DocumentVersion, artifact.document_version_id)
+            if artifact
+            else None
+        )
+        if not artifact or not version:
+            console.print("MOS_MAIN não encontrado no snapshot do build")
+            raise typer.Exit(code=1)
+        from .corpus import storage_root
+
+        pages = PdfTextExtractor().extract(storage_root() / artifact.storage_path).pages
+        result = parse_mos_text("\n".join(page.text for page in pages))
+        try:
+            document, created = materialize_mos(
+                session, target_build, version, artifact, result
+            )
+            session.commit()
+        except Exception as error:
+            session.rollback()
+            console.print(f"Falha na materialização: {error}")
+            raise typer.Exit(code=1) from error
+        console.print(
+            f"MOS {'materializado' if created else 'já materializado'}: {document.id}"
+        )
+        console.print(
+            f"Eventos: {len(result.events)} | Warnings: {len(result.diagnostics)}"
+        )
+
+
+@mos_app.command("status")
+def mos_status(build: str = typer.Option(..., "--build")) -> None:
+    with session_factory()() as session:
+        target_build = resolve_build(session, build)
+        if not target_build:
+            console.print("Build não encontrado")
+            raise typer.Exit(code=1)
+        documents = session.scalars(
+            select(MosDocument).where(MosDocument.corpus_build_id == target_build.id)
+        ).all()
+        console.print(f"Build: {target_build.id}")
+        console.print(f"Materializado: {'sim' if documents else 'não'}")

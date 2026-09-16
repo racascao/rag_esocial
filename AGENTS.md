@@ -15,3 +15,12 @@
 - Apresentação humana não faz parte da identidade estável.
 - Reutilizar o único `SNAPSHOT_MEMBERSHIP_VALIDITY`; não duplicar o predicado.
 - `SearchProjection` não pertence ao `CorpusBuild`; não antecipar parser ou retrieval.
+- Parser estrutural nunca usa LLM nem hardcode de perguntas.
+- `MosEventSection` e `ContentBlock` não são `SearchUnit`.
+- `Example`/`Observation` não são D1 universais.
+- `ExplicitReference` detectada permanece `UNRESOLVED` até a Fase 4.
+- Parser MOS não cria `CanonicalEntity` por conta própria.
+- Estrutura derivada sempre pertence a um `CorpusBuild`.
+- Extração PDF deve permanecer separada do parser estrutural e não usa OCR automaticamente.
+- Materialização MOS é transacional; referências persistidas exigem origem citável.
+- Reparse no mesmo build/artifact não pode duplicar materialização; mudança de parser exige novo build.
