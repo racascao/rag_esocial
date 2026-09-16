@@ -33,6 +33,7 @@ from .models.corpus import (
 from .models.facts import EntityRelation, ReferenceResolution, ResolvedFact, SourceFact
 from .models.layout import LayoutDocument
 from .models.mos import MosDocument
+from .models.search import SearchProjection, SearchUnit
 from .models.xsd import (
     XsdElement,
     XsdEnumeration,
@@ -43,6 +44,7 @@ from .models.xsd import (
 from .mos_materializer import materialize_mos
 from .mos_parser import parse_mos_text
 from .pdf_text import PdfTextExtractor
+from .search_service import materialize_projection, search
 from .xsd_materializer import parse_and_materialize_xsd
 
 app = typer.Typer(help="Fundação CLI do assistente RAG eSocial.", no_args_is_help=True)
@@ -62,6 +64,8 @@ xsd_app = typer.Typer(help="Parser estrutural do pacote XSD.")
 app.add_typer(xsd_app, name="xsd")
 facts_app = typer.Typer(help="Fatos determinísticos e resolução de referências.")
 app.add_typer(facts_app, name="facts")
+search_app = typer.Typer(help="Projeções experimentais e busca lexical FTS.")
+app.add_typer(search_app, name="search")
 console = Console()
 
 
@@ -482,3 +486,61 @@ def facts_status(build: str = typer.Option(..., "--build")) -> None:
                 or 0
             )
             console.print(f"{label}: {count}")
+
+
+@search_app.command("build")
+def search_build(
+    build: str = typer.Option(..., "--build"),
+    profile: str = typer.Option(..., "--profile"),
+) -> None:
+    with session_factory()() as session:
+        target = resolve_build(session, build)
+        if not target:
+            raise typer.Exit(code=1)
+        try:
+            projection, created = materialize_projection(session, target, profile)
+            session.commit()
+        except Exception as error:
+            session.rollback()
+            console.print(f"Falha na projeção: {error}")
+            raise typer.Exit(code=1) from error
+        console.print(
+            f"Projeção {'criada' if created else 'existente'}: {projection.id}"
+        )
+
+
+@search_app.command("query")
+def search_query(
+    projection: str = typer.Option(..., "--projection"),
+    query: str = typer.Option(..., "--query"),
+) -> None:
+    with session_factory()() as session:
+        item = session.get(SearchProjection, projection)
+        if not item:
+            raise typer.Exit(code=1)
+        for row in search(session, item, query):
+            console.print(
+                f"{row['score']:.4f} {row['source_local_stable_path']} {row['title']}"
+            )
+
+
+@search_app.command("status")
+def search_status(build: str = typer.Option(..., "--build")) -> None:
+    with session_factory()() as session:
+        target = resolve_build(session, build)
+        if not target:
+            raise typer.Exit(code=1)
+        for projection in session.scalars(
+            select(SearchProjection).where(
+                SearchProjection.corpus_build_id == target.id
+            )
+        ).all():
+            count = (
+                session.scalar(
+                    select(func.count())
+                    .select_from(SearchUnit)
+                    .where(SearchUnit.search_projection_id == projection.id)
+                )
+                or 0
+            )
+            console.print(f"{projection.profile}: {count}")

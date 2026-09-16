@@ -60,6 +60,11 @@ from rag_esocial.models.mos import (
     MosEventTopic,
     MosTopic,
 )
+from rag_esocial.models.search import (
+    SearchProjection,
+    SearchUnit,
+    SearchUnitCitationTarget,
+)
 from rag_esocial.models.xsd import (
     XsdElement,
     XsdEnumeration,
@@ -70,6 +75,7 @@ from rag_esocial.models.xsd import (
 from rag_esocial.mos_materializer import materialize_mos
 from rag_esocial.mos_parser import parse_mos_text
 from rag_esocial.pdf_text import PdfTextExtractor
+from rag_esocial.search_service import materialize_projection, search
 from rag_esocial.xsd_materializer import materialize_xsd
 from rag_esocial.xsd_parser import parse_xsd_package
 
@@ -275,6 +281,9 @@ condition='REGRA_LAYOUT'>Descrição REGRA_LAYOUT e Tabela 05</p>
 
 def cleanup(session, ids):
     for model in [
+        SearchUnitCitationTarget,
+        SearchUnit,
+        SearchProjection,
         XsdEnumeration,
         XsdElement,
         XsdSharedType,
@@ -284,6 +293,9 @@ def cleanup(session, ids):
         ReferenceResolution,
         EntityRelation,
         ResolvedFact,
+        SearchUnitCitationTarget,
+        SearchUnit,
+        SearchProjection,
         LayoutField,
         LayoutGroup,
         LayoutEvent,
@@ -962,6 +974,131 @@ def test_facts_two_builds_postgresql(tmp_path):
             select(func.count())
             .select_from(SourceFact)
             .where(SourceFact.corpus_build_id == build2.id)
+        )
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_search_projection_fts_postgresql(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        materialize_phase4_fixture(session, build, snapshot)
+        session.commit()
+        digest = build.build_digest
+        projection, created = materialize_projection(session, build, "LAYOUT_FIELD")
+        session.commit()
+        session.close()
+        session = session_factory()()
+        assert created and session.get(SearchProjection, projection.id)
+        assert session.scalar(
+            select(func.count())
+            .select_from(SearchUnit)
+            .where(SearchUnit.search_projection_id == projection.id)
+        )
+        rows = search(session, session.get(SearchProjection, projection.id), "aliqRat")
+        assert rows and rows[0]["source_local_stable_path"].endswith("aliqRat")
+        assert session.get(CorpusBuild, build.id).build_digest == digest
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_search_projection_idempotency_and_multiple_profiles(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        materialize_phase4_fixture(session, build, snapshot)
+        session.commit()
+        projection, created = materialize_projection(session, build, "XSD_ELEMENT")
+        session.commit()
+        before = count_rows(session, SearchUnit)
+        same, created_again = materialize_projection(session, build, "XSD_ELEMENT")
+        session.commit()
+        assert before == count_rows(session, SearchUnit)
+        other, other_created = materialize_projection(session, build, "LAYOUT_FIELD")
+        session.commit()
+        assert (
+            created
+            and not created_again
+            and same.id == projection.id
+            and other_created
+            and other.id != projection.id
+        )
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_search_projection_rolls_back_postgresql(tmp_path, monkeypatch):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    build_id = build.id
+    try:
+        materialize_phase4_fixture(session, build, snapshot)
+        session.commit()
+        import rag_esocial.search_service as search_module
+
+        original = search_module._target
+        calls = 0
+
+        def fail_after_partial(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("search projection rollback")
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(search_module, "_target", fail_after_partial)
+        try:
+            materialize_projection(session, build, "XSD_ELEMENT")
+        except RuntimeError:
+            session.rollback()
+        else:
+            raise AssertionError("rollback failure was not injected")
+        session.close()
+        session = session_factory()()
+        assert not session.scalars(
+            select(SearchProjection).where(SearchProjection.corpus_build_id == build_id)
+        ).all()
+        assert not session.scalars(
+            select(SearchUnit)
+            .join(SearchProjection)
+            .where(SearchProjection.corpus_build_id == build_id)
+        ).all()
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_search_projection_two_builds_are_specific_and_targets_transversal(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        materialize_phase4_fixture(session, build, snapshot)
+        build_facts(session, build)
+        session.commit()
+        first, _ = materialize_projection(session, build, "LAYOUT_FIELD")
+        session.commit()
+        build2 = create_build(session, snapshot.slug, "search-projection-test-v2", {})
+        ids["builds"].append(build2.id)
+        materialize_phase4_fixture(session, build2, snapshot)
+        build_facts(session, build2)
+        session.commit()
+        second, _ = materialize_projection(session, build2, "LAYOUT_FIELD")
+        session.commit()
+        one = session.scalar(
+            select(SearchUnit).where(SearchUnit.search_projection_id == first.id)
+        )
+        two = session.scalar(
+            select(SearchUnit).where(SearchUnit.search_projection_id == second.id)
+        )
+        assert one and two and one.id != two.id
+        assert one.source_local_stable_path == two.source_local_stable_path
+        assert one.root_citation_target_id == two.root_citation_target_id
+        assert session.scalar(
+            select(CanonicalEntity).where(CanonicalEntity.stable_key == "EVENT:S-9999")
         )
     finally:
         cleanup(session, ids)
