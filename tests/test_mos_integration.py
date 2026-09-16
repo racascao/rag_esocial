@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 import shutil
 import uuid
 import zipfile
@@ -10,6 +11,7 @@ from sqlalchemy import delete, func, select
 
 import rag_esocial.layout_materializer as layout_materializer_module
 import rag_esocial.mos_materializer as mos_materializer_module
+import rag_esocial.xsd_materializer as xsd_materializer_module
 from rag_esocial.build_service import create_build
 from rag_esocial.corpus import (
     freeze_snapshot,
@@ -50,9 +52,18 @@ from rag_esocial.models.mos import (
     MosEventTopic,
     MosTopic,
 )
+from rag_esocial.models.xsd import (
+    XsdElement,
+    XsdEnumeration,
+    XsdEventSchema,
+    XsdPackageDocument,
+    XsdSharedType,
+)
 from rag_esocial.mos_materializer import materialize_mos
 from rag_esocial.mos_parser import parse_mos_text
 from rag_esocial.pdf_text import PdfTextExtractor
+from rag_esocial.xsd_materializer import materialize_xsd
+from rag_esocial.xsd_parser import parse_xsd_package
 
 
 def make_integration_pdf(path: Path) -> None:
@@ -128,8 +139,27 @@ condition='REGRA_LAYOUT'>Descrição REGRA_LAYOUT e Tabela 05</p>
     )
     xsd_path = tmp_path / "fixture.zip"
     with zipfile.ZipFile(xsd_path, "w") as archive:
-        archive.writestr("evento.xsd", "<schema/>")
-        archive.writestr("tipos.xsd", "<schema/>")
+        archive.writestr(
+            "evento_fixture.xsd",
+            """<xs:schema xmlns:xs='http://www.w3.org/2001/XMLSchema' targetNamespace='urn:fixture:1.0'>
+<xs:element name='evtFixture'><xs:annotation><xs:documentation>REGRA_EXEMPLO Tabela 05</xs:documentation></xs:annotation>
+<xs:complexType><xs:sequence><xs:element name='id' type='ts:TS_Id' minOccurs='1' maxOccurs='unbounded'/>
+<xs:element name='code' minOccurs='0' maxOccurs='1'><xs:simpleType><xs:restriction base='xs:string'><xs:pattern value='[A-Z]+'/>
+<xs:enumeration value='A'><xs:annotation><xs:documentation>Alpha</xs:documentation></xs:annotation></xs:enumeration>
+</xs:restriction></xs:simpleType></xs:element></xs:sequence></xs:complexType></xs:element>
+<xs:include schemaLocation='tipos.xsd'/></xs:schema>""",
+        )
+        archive.writestr(
+            "tipos.xsd",
+            """<xs:schema xmlns:xs='http://www.w3.org/2001/XMLSchema' targetNamespace='urn:fixture:1.0'>
+<xs:simpleType name='TS_Id'><xs:annotation><xs:documentation>CHAVE_GRUPO: id</xs:documentation></xs:annotation>
+<xs:restriction base='xs:string'><xs:minLength value='2'/></xs:restriction></xs:simpleType>
+<xs:complexType name='T_Group'><xs:sequence><xs:element name='child'/></xs:sequence></xs:complexType></xs:schema>""",
+        )
+        archive.writestr(
+            "xmldsig-core-schema.xsd",
+            "<xs:schema xmlns:xs='http://www.w3.org/2001/XMLSchema'/>",
+        )
     payloads[ArtifactRole.XSD_PACKAGE.value] = xsd_path
 
     session = session_factory()()
@@ -237,10 +267,20 @@ condition='REGRA_LAYOUT'>Descrição REGRA_LAYOUT e Tabela 05</p>
 
 def cleanup(session, ids):
     for model in [
+        XsdEnumeration,
+        XsdElement,
+        XsdSharedType,
+        XsdEventSchema,
+        XsdPackageDocument,
         LayoutField,
         LayoutGroup,
         LayoutEvent,
         LayoutDocument,
+        XsdEnumeration,
+        XsdElement,
+        XsdEventSchema,
+        XsdPackageDocument,
+        XsdSharedType,
         ExplicitReference,
         ContentBlock,
         MosEventSubitem,
@@ -259,7 +299,7 @@ def cleanup(session, ids):
         CorpusSnapshot,
     ]:
         if model is CorpusBuildCitationTarget:
-            session.execute(delete(model).where(model.build_id.in_(ids["builds"])))
+            session.execute(delete(model))
         elif model in (DocumentArtifact, DocumentVersion, CorpusSnapshot):
             key = {
                 DocumentArtifact: "artifacts",
@@ -357,6 +397,146 @@ def test_mos_postgres_harness_e2e_idempotency_and_two_builds(tmp_path: Path) -> 
         session.close()
 
 
+def test_xsd_postgres_e2e_idempotency_rollback_and_two_builds(tmp_path, monkeypatch):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    xsd_artifact = session.scalar(
+        select(DocumentArtifact).where(
+            DocumentArtifact.artifact_role == ArtifactRole.XSD_PACKAGE.value,
+            DocumentArtifact.document_version_id.in_(
+                select(SnapshotMember.document_version_id).where(
+                    SnapshotMember.snapshot_id == snapshot.id
+                )
+            ),
+        )
+    )
+    xsd_version = session.get(DocumentVersion, xsd_artifact.document_version_id)
+    result = parse_xsd_package(storage_root() / xsd_artifact.storage_path)
+    try:
+        package = materialize_xsd(session, build, xsd_version, xsd_artifact, result)
+        session.commit()
+        session.close()
+        session = session_factory()()
+        counts = {
+            model: count_rows(session, model)
+            for model in [
+                XsdPackageDocument,
+                XsdEventSchema,
+                XsdElement,
+                XsdSharedType,
+                XsdEnumeration,
+                ExplicitReference,
+                CitationTarget,
+                CorpusBuildCitationTarget,
+            ]
+        }
+        assert session.get(XsdPackageDocument, package.id)
+        assert {
+            row.schema_kind for row in session.scalars(select(XsdEventSchema)).all()
+        } == {"EVENT_SCHEMA", "SHARED_TYPES_SCHEMA", "AUXILIARY_SCHEMA"}
+        element = session.scalar(select(XsdElement).where(XsdElement.name == "id"))
+        assert (
+            element
+            and element.type_qname == "ts:TS_Id"
+            and element.max_occurs == "unbounded"
+        )
+        code = session.scalar(select(XsdElement).where(XsdElement.name == "code"))
+        assert code and code.min_occurs == "0" and code.parent_element_id
+        assert session.scalar(select(XsdEnumeration).where(XsdEnumeration.value == "A"))
+        refs = session.scalars(
+            select(ExplicitReference).where(
+                ExplicitReference.corpus_build_id == build.id
+            )
+        ).all()
+        assert refs and all(ref.resolution_status == "UNRESOLVED" for ref in refs)
+        assert any(ref.reference_kind == "SCHEMA_INCLUDE" for ref in refs)
+        origin = session.get(
+            CitationTarget,
+            next(
+                ref.origin_citation_target_id
+                for ref in refs
+                if ref.reference_kind == "SCHEMA_INCLUDE"
+            ),
+        )
+        assert origin and "/schema/evento_fixture" in origin.source_local_stable_path
+        session.expunge_all()
+        materialize_xsd(session, build, xsd_version, xsd_artifact, result)
+        session.commit()
+        assert counts == {model: count_rows(session, model) for model in counts}
+        build2 = create_build(session, snapshot.slug, "xsd-parser-test-v2", {})
+        ids["builds"].append(build2.id)
+        materialize_xsd(session, build2, xsd_version, xsd_artifact, result)
+        session.commit()
+        assert count_rows(session, XsdPackageDocument) >= 2
+        b1 = session.scalar(
+            select(XsdElement).where(
+                XsdElement.package_document_id == package.id, XsdElement.name == "id"
+            )
+        )
+        b2 = session.scalar(
+            select(XsdElement).where(
+                XsdElement.package_document_id != package.id, XsdElement.name == "id"
+            )
+        )
+        assert (
+            b1
+            and b2
+            and b1.id != b2.id
+            and b1.source_local_stable_path == b2.source_local_stable_path
+        )
+        targets = session.scalars(
+            select(CitationTarget).where(
+                CitationTarget.source_local_stable_path == b1.source_local_stable_path,
+                CitationTarget.document_version_id == xsd_version.id,
+            )
+        ).all()
+        assert len(targets) == 1
+        assert (
+            len(
+                session.scalars(
+                    select(CorpusBuildCitationTarget).where(
+                        CorpusBuildCitationTarget.citation_target_id == targets[0].id
+                    )
+                ).all()
+            )
+            == 2
+        )
+        build3 = create_build(session, snapshot.slug, "xsd-parser-test-v3", {})
+        ids["builds"].append(build3.id)
+        build3_id = build3.id
+        original = xsd_materializer_module.associate_citation_target
+        calls = 0
+
+        def fail_after_partial(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("injected xsd failure")
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(
+            xsd_materializer_module, "associate_citation_target", fail_after_partial
+        )
+        try:
+            materialize_xsd(session, build3, xsd_version, xsd_artifact, result)
+        except RuntimeError:
+            session.rollback()
+        else:
+            raise AssertionError("rollback failure was not injected")
+        session.close()
+        session = session_factory()()
+        assert not session.scalar(
+            select(XsdPackageDocument).where(
+                XsdPackageDocument.corpus_build_id == build3_id
+            )
+        )
+        assert session.get(CorpusSnapshot, snapshot.id).frozen_at
+        assert session.get(DocumentArtifact, xsd_artifact.id)
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
 def test_mos_materialization_rolls_back_after_intermediate_failure(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -442,7 +622,12 @@ def test_layout_postgres_e2e_idempotency_origins_two_builds_and_rollback(
     snapshot_id = snapshot.id
     layout_artifact = session.scalar(
         select(DocumentArtifact).where(
-            DocumentArtifact.artifact_role == ArtifactRole.LAYOUT_MAIN.value
+            DocumentArtifact.artifact_role == ArtifactRole.LAYOUT_MAIN.value,
+            DocumentArtifact.document_version_id.in_(
+                select(SnapshotMember.document_version_id).where(
+                    SnapshotMember.snapshot_id == snapshot.id
+                )
+            ),
         )
     )
     layout_version = session.get(DocumentVersion, layout_artifact.document_version_id)

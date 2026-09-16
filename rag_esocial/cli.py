@@ -31,9 +31,17 @@ from .models.corpus import (
 )
 from .models.layout import LayoutDocument
 from .models.mos import MosDocument
+from .models.xsd import (
+    XsdElement,
+    XsdEnumeration,
+    XsdEventSchema,
+    XsdPackageDocument,
+    XsdSharedType,
+)
 from .mos_materializer import materialize_mos
 from .mos_parser import parse_mos_text
 from .pdf_text import PdfTextExtractor
+from .xsd_materializer import parse_and_materialize_xsd
 
 app = typer.Typer(help="Fundação CLI do assistente RAG eSocial.", no_args_is_help=True)
 db_app = typer.Typer(help="Comandos de infraestrutura do banco.")
@@ -48,6 +56,8 @@ mos_app = typer.Typer(help="Parser estrutural do MOS.")
 app.add_typer(mos_app, name="mos")
 layout_app = typer.Typer(help="Parser estrutural do Leiaute.")
 app.add_typer(layout_app, name="layout")
+xsd_app = typer.Typer(help="Parser estrutural do pacote XSD.")
+app.add_typer(xsd_app, name="xsd")
 console = Console()
 
 
@@ -368,3 +378,64 @@ def layout_status(build: str = typer.Option(..., "--build")) -> None:
         )
         console.print(f"Build: {target_build.id}")
         console.print(f"Materializado: {'sim' if count else 'não'}")
+
+
+@xsd_app.command("parse")
+def xsd_parse(build: str = typer.Option(..., "--build")) -> None:
+    with session_factory()() as session:
+        target = resolve_build(session, build)
+        if not target:
+            console.print("Build não encontrado")
+            raise typer.Exit(code=1)
+        artifact = session.scalar(
+            select(DocumentArtifact).where(
+                DocumentArtifact.artifact_role == "XSD_PACKAGE",
+                DocumentArtifact.document_version_id.in_(
+                    select(SnapshotMember.document_version_id).where(
+                        SnapshotMember.snapshot_id == target.corpus_snapshot_id
+                    )
+                ),
+            )
+        )
+        version = (
+            session.get(DocumentVersion, artifact.document_version_id)
+            if artifact
+            else None
+        )
+        if not artifact or not version:
+            console.print("XSD_PACKAGE não encontrado no snapshot")
+            raise typer.Exit(code=1)
+        try:
+            doc = parse_and_materialize_xsd(session, target, version, artifact)
+            session.commit()
+        except Exception as error:
+            session.rollback()
+            console.print(f"Falha no parse XSD: {error}")
+            raise typer.Exit(code=1) from error
+        console.print(f"XSD materializado: {doc.id}")
+
+
+@xsd_app.command("status")
+def xsd_status(build: str = typer.Option(..., "--build")) -> None:
+    with session_factory()() as session:
+        target = resolve_build(session, build)
+        if not target:
+            raise typer.Exit(code=1)
+        doc = session.scalar(
+            select(XsdPackageDocument).where(
+                XsdPackageDocument.corpus_build_id == target.id
+            )
+        )
+        console.print(f"Build: {target.id}")
+        console.print(f"Package: {'sim' if doc else 'não'}")
+        if doc:
+            for label, model in (
+                ("Schemas", XsdEventSchema),
+                ("Shared types", XsdSharedType),
+                ("Elements", XsdElement),
+                ("Enumerations", XsdEnumeration),
+            ):
+                console.print(
+                    f"{label}: "
+                    f"{session.scalar(select(func.count()).select_from(model)) or 0}"
+                )
