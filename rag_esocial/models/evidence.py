@@ -75,7 +75,7 @@ class EvidenceSetItem(Base):
         ForeignKey("evidence_sets.id"), primary_key=True
     )
     evidence_unit_id: Mapped[str] = mapped_column(
-        ForeignKey("evidence_units.id"), nullable=False
+        ForeignKey("evidence_units.id"), primary_key=True
     )
     source_search_unit_id: Mapped[str] = mapped_column(
         ForeignKey("search_units.id"), nullable=False

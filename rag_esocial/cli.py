@@ -20,8 +20,13 @@ from .corpus import (
     verify_snapshot,
 )
 from .db import check_connection, session_factory
-from .evaluation_service import evaluate_retrieval_evidence, write_report
+from .evaluation_service import (
+    evaluate_fact_resolution_status,
+    evaluate_retrieval_evidence,
+    write_report,
+)
 from .evidence_service import assemble_evidence
+from .fact_resolution_service import requested_fact, resolve_requested_fact
 from .facts_service import build_facts
 from .layout_materializer import materialize_layout
 from .layout_parser import parse_layout_html
@@ -34,6 +39,7 @@ from .models.corpus import (
     SnapshotMember,
 )
 from .models.evidence import EvidenceSet, EvidenceSetItem, EvidenceUnit
+from .models.fact_resolution import FactResolution, FactResolutionSupport, RequestedFact
 from .models.facts import EntityRelation, ReferenceResolution, ResolvedFact, SourceFact
 from .models.layout import LayoutDocument
 from .models.mos import MosDocument
@@ -496,6 +502,80 @@ def facts_status(build: str = typer.Option(..., "--build")) -> None:
             console.print(f"{label}: {count}")
 
 
+@facts_app.command("resolve")
+def facts_resolve(
+    build: str = typer.Option(..., "--build"),
+    fact_type: str = typer.Option(..., "--fact-type"),
+    subject_kind: str = typer.Option(..., "--subject-kind"),
+    subject_key: str = typer.Option(..., "--subject-key"),
+    source: str = typer.Option(..., "--source"),
+    evidence_set: str | None = typer.Option(None, "--evidence-set"),
+) -> None:
+    with session_factory()() as session:
+        target = resolve_build(session, build)
+        evidence = session.get(EvidenceSet, evidence_set) if evidence_set else None
+        if not target or (evidence_set and not evidence):
+            raise typer.Exit(code=1)
+        try:
+            request, _ = requested_fact(
+                session, target, fact_type, subject_kind, subject_key
+            )
+            resolution, _ = resolve_requested_fact(session, request, source, evidence)
+            session.commit()
+        except Exception as error:
+            session.rollback()
+            console.print(f"Falha na resolução: {error}")
+            raise typer.Exit(code=1) from error
+        console.print_json(
+            json.dumps(
+                {
+                    "requested_fact_id": request.id,
+                    "resolution_id": resolution.id,
+                    "runtime_status": resolution.runtime_status,
+                    "resolved_value": resolution.resolved_value,
+                },
+                ensure_ascii=False,
+            )
+        )
+
+
+@facts_app.command("resolution-show")
+def facts_resolution_show(resolution: str = typer.Option(..., "--resolution")) -> None:
+    with session_factory()() as session:
+        item = session.get(FactResolution, resolution)
+        if not item:
+            raise typer.Exit(code=1)
+        supports = session.scalars(
+            select(FactResolutionSupport)
+            .where(FactResolutionSupport.fact_resolution_id == item.id)
+            .order_by(FactResolutionSupport.support_order)
+        ).all()
+        request = session.get(RequestedFact, item.requested_fact_id)
+        console.print_json(
+            json.dumps(
+                {
+                    "requested_fact": request.request_payload,
+                    "source": item.document_family,
+                    "runtime_status": item.runtime_status,
+                    "resolved_value": item.resolved_value,
+                    "strategy": item.resolution_strategy,
+                    "reason": item.reason_code,
+                    "evidence_set_id": item.evidence_set_id,
+                    "provenance": item.provenance,
+                    "supports": [
+                        {
+                            "evidence_unit_id": support.evidence_unit_id,
+                            "source_fact_id": support.source_fact_id,
+                            "resolved_fact_id": support.resolved_fact_id,
+                        }
+                        for support in supports
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+
+
 @search_app.command("build")
 def search_build(
     build: str = typer.Option(..., "--build"),
@@ -625,5 +705,29 @@ def eval_retrieval(
         except Exception as error:
             session.rollback()
             console.print(f"Falha na avaliação: {error}")
+            raise typer.Exit(code=1) from error
+        console.print_json(json.dumps(report, ensure_ascii=False, sort_keys=True))
+
+
+@eval_app.command("facts")
+def eval_facts(
+    build: str = typer.Option(..., "--build"),
+    dataset: Path = typer.Option(
+        Path("evaluation/dev/fact_resolution_status_v1.json"), "--dataset"
+    ),
+    output: Path | None = typer.Option(None, "--output"),
+) -> None:
+    with session_factory()() as session:
+        target = resolve_build(session, build)
+        if not target:
+            raise typer.Exit(code=1)
+        try:
+            report = evaluate_fact_resolution_status(session, target, dataset)
+            if output:
+                write_report(report, output)
+            session.commit()
+        except Exception as error:
+            session.rollback()
+            console.print(f"Falha na avaliação de fatos: {error}")
             raise typer.Exit(code=1) from error
         console.print_json(json.dumps(report, ensure_ascii=False, sort_keys=True))

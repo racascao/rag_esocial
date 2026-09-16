@@ -1,0 +1,14 @@
+{
+  "dataset_id": "fact-resolution-status-v1",
+  "dataset_kind": "DEV_NOT_BLIND_HOLDOUT",
+  "cases": [
+    {"case_id": "mos-covered", "requested_fact": {"fact_type": "EVENT_CONCEITO", "subject_kind": "EVENT", "subject_key": "S-9999", "qualifiers": {}}, "source": "MOS", "query": "S-9999", "profile": "MOS_EVENT_SECTION", "top_k": 5, "gold_coverage_state": "COVERED", "expected_value": {"value": "Consultar S-1210 {ideDmDev}\nQuem estÃ¡ obrigado\nEmpregadores."}},
+    {"case_id": "layout-covered", "requested_fact": {"fact_type": "LAYOUT_TYPE", "subject_kind": "EVENT", "subject_key": "S-9999", "qualifiers": {}}, "source": "LAYOUT", "query": "S-9999", "profile": "LAYOUT_FIELD", "top_k": 5, "gold_coverage_state": "COVERED", "expected_value": {"value": "N"}},
+    {"case_id": "xsd-covered", "requested_fact": {"fact_type": "XSD_MAX_OCCURS", "subject_kind": "FIELD", "subject_key": "XSD/urn:fixture:1.0/schema/evento_fixture/evtFixture/id", "qualifiers": {}}, "source": "XSD", "query": "evtFixture", "profile": "XSD_ELEMENT", "top_k": 5, "gold_coverage_state": "COVERED", "expected_value": {"value": "unbounded"}},
+    {"case_id": "not-applicable", "requested_fact": {"fact_type": "LAYOUT_TYPE", "subject_kind": "EVENT", "subject_key": "S-9999", "qualifiers": {}}, "source": "MOS", "query": "S-9999", "profile": "MOS_EVENT_SECTION", "top_k": 5, "gold_coverage_state": "SOURCE_NOT_APPLICABLE"},
+    {"case_id": "aspect-not-covered", "requested_fact": {"fact_type": "XSD_MAX_OCCURS", "subject_kind": "EVENT", "subject_key": "S-9999", "qualifiers": {}}, "source": "XSD", "query": "evtFixture", "profile": "XSD_ELEMENT", "top_k": 5, "gold_coverage_state": "ASPECT_NOT_COVERED"},
+    {"case_id": "unsupported-subject", "requested_fact": {"fact_type": "LAYOUT_TYPE", "subject_kind": "EVENT", "subject_key": "S-UNKNOWN", "qualifiers": {}}, "source": "LAYOUT", "query": "S-9999", "profile": "LAYOUT_FIELD", "top_k": 5, "gold_coverage_state": "CORPUS_UNSUPPORTED"},
+    {"case_id": "controlled-retrieval-miss", "requested_fact": {"fact_type": "LAYOUT_TYPE", "subject_kind": "EVENT", "subject_key": "S-9999", "qualifiers": {}}, "source": "LAYOUT", "query": "S-9999", "profile": "MOS_EVENT_SECTION", "top_k": 5, "gold_coverage_state": "COVERED", "expected_runtime_status": "NO_RELEVANT_EVIDENCE"},
+    {"case_id": "second-not-applicable", "requested_fact": {"fact_type": "EVENT_CONCEITO", "subject_kind": "EVENT", "subject_key": "S-9999", "qualifiers": {}}, "source": "XSD", "query": "evtFixture", "profile": "XSD_ELEMENT", "top_k": 5, "gold_coverage_state": "SOURCE_NOT_APPLICABLE"}
+  ]
+}

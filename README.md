@@ -33,10 +33,10 @@ docker compose exec app uv run pytest
 
 ## Estado e roadmap
 
-Fase 0 fornece Typer + Rich, configuração tipada, logging, SQLAlchemy/Alembic, PostgreSQL e testes. Fases 1–5 fornecem provenance, builds, parsers estruturais, fatos determinísticos e baseline FTS. A Fase 6 adiciona retrieval lexical e evidence assembly auditável, mantendo SearchUnit distinta de EvidenceUnit e CitationTarget; não implementa answerer, embeddings ou RAG. O snapshot oficial inicial permanece DRAFT; nenhum freeze real foi feito.
+Fase 0 fornece Typer + Rich, configuração tipada, logging, SQLAlchemy/Alembic, PostgreSQL e testes. Fases 1–5 fornecem provenance, builds, parsers estruturais, fatos determinísticos e baseline FTS. A Fase 6 adiciona retrieval lexical e evidence assembly auditável. A Fase 7 está COMPLETE: RequestedFact build-specific, resolução determinística por fonte, status de abstention, suporte factual autorizado e avaliação DEV. O snapshot oficial inicial permanece DRAFT; nenhum freeze real foi feito.
 
 Para importação manual autorizada, use `esocial corpus artifact import --role ... --file ... --official-url ... --version-label ... --title ... --family ...`. O volume `corpus_data` não é versionado no Git.
 
-Ainda não existe parser semântico XSD, retrieval, Evidence Assembly, resolução de fatos, embeddings, RAG, prompts, answerer, avaliação DEV ou integração com LLM. `SearchProjection` permanece reservada para a Fase 5. Anexos I/II não são parseados por falta de formato físico oficial confirmado no repositório.
+Ainda não existem embeddings, prompts, answerer, síntese cross-source ou integração com LLM. A resolução de fatos não responde em linguagem natural e não arbitra fontes. Anexos I/II não são parseados por falta de formato físico oficial confirmado no repositório.
 
-Próximas fases: corpus e proveniência; parsing/modelagem; unidades de busca e evidência; resolução determinística; síntese restrita por evidência; avaliação.
+Próxima fase: Fase 8 — Answer Contract + modelo + benchmark/integration; `gemma4:12b` só será integrado nessa fase apropriada.

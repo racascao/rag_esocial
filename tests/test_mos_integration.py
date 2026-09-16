@@ -20,8 +20,13 @@ from rag_esocial.corpus import (
     verify_snapshot,
 )
 from rag_esocial.db import session_factory
-from rag_esocial.evaluation_service import evaluate_retrieval_evidence, write_report
+from rag_esocial.evaluation_service import (
+    evaluate_fact_resolution_status,
+    evaluate_retrieval_evidence,
+    write_report,
+)
 from rag_esocial.evidence_service import assemble_evidence
+from rag_esocial.fact_resolution_service import requested_fact, resolve_requested_fact
 from rag_esocial.facts_service import build_facts
 from rag_esocial.layout_materializer import materialize_layout
 from rag_esocial.layout_parser import parse_layout_html
@@ -41,6 +46,12 @@ from rag_esocial.models.corpus import (
     SnapshotMember,
 )
 from rag_esocial.models.evidence import EvidenceSet, EvidenceSetItem, EvidenceUnit
+from rag_esocial.models.fact_resolution import (
+    FactResolution,
+    FactResolutionSupport,
+    RequestedFact,
+    RuntimeStatus,
+)
 from rag_esocial.models.facts import (
     EntityRelation,
     ReferenceResolution,
@@ -284,6 +295,9 @@ condition='REGRA_LAYOUT'>Descrição REGRA_LAYOUT e Tabela 05</p>
 
 def cleanup(session, ids):
     for model in [
+        FactResolutionSupport,
+        FactResolution,
+        RequestedFact,
         EvidenceSetItem,
         EvidenceUnit,
         EvidenceSet,
@@ -1236,6 +1250,295 @@ def test_dev_retrieval_evidence_evaluation_is_deterministic(tmp_path):
         assert first["aggregates"]
         assert first["dataset_kind"] == "DEV_NOT_BLIND_HOLDOUT"
         assert all("mrr" in item["metrics"] for item in first["results"])
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def _resolution_fixture(session, snapshot, build):
+    materialize_phase4_fixture(session, build, snapshot)
+    build_facts(session, build)
+    session.flush()
+    mos, _ = materialize_projection(session, build, "MOS_EVENT_SECTION")
+    layout, _ = materialize_projection(session, build, "LAYOUT_FIELD")
+    xsd, _ = materialize_projection(session, build, "XSD_ELEMENT")
+    return (
+        assemble_evidence(session, build, mos, "S-9999")[0],
+        assemble_evidence(session, build, layout, "S-9999")[0],
+        assemble_evidence(session, build, xsd, "evtFixture")[0],
+    )
+
+
+def test_fact_resolution_e2e_postgresql(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        mos_evidence, layout_evidence, xsd_evidence = _resolution_fixture(
+            session, snapshot, build
+        )
+        immutable_state = {
+            "build_digest": build.build_digest,
+            "projections": session.execute(
+                select(
+                    SearchProjection.id,
+                    SearchProjection.projection_config_digest,
+                    SearchProjection.text_search_config,
+                ).where(SearchProjection.corpus_build_id == build.id)
+            ).all(),
+            "units": session.execute(
+                select(
+                    SearchUnit.id,
+                    SearchUnit.search_projection_id,
+                    SearchUnit.search_text,
+                )
+            ).all(),
+            "evidence_sets": session.execute(
+                select(EvidenceSet.id, EvidenceSet.assembly_config_digest).where(
+                    EvidenceSet.corpus_build_id == build.id
+                )
+            ).all(),
+            "evidence_units": session.execute(
+                select(EvidenceUnit.id, EvidenceUnit.rendered_content_sha256).where(
+                    EvidenceUnit.corpus_build_id == build.id
+                )
+            ).all(),
+        }
+        mos_request, _ = requested_fact(
+            session, build, "EVENT_CONCEITO", "EVENT", "S-9999"
+        )
+        mos, _ = resolve_requested_fact(session, mos_request, "MOS", mos_evidence)
+        layout_request, _ = requested_fact(
+            session, build, "LAYOUT_TYPE", "EVENT", "S-9999"
+        )
+        layout, _ = resolve_requested_fact(
+            session, layout_request, "LAYOUT", layout_evidence
+        )
+        fact = session.scalar(
+            select(SourceFact).where(
+                SourceFact.corpus_build_id == build.id,
+                SourceFact.fact_type == "XSD_MAX_OCCURS",
+            )
+        )
+        path = session.get(
+            CitationTarget, fact.citation_target_id
+        ).source_local_stable_path
+        xsd_request, _ = requested_fact(session, build, "XSD_MAX_OCCURS", "FIELD", path)
+        xsd, _ = resolve_requested_fact(session, xsd_request, "XSD", xsd_evidence)
+        session.commit()
+        assert build.build_digest == immutable_state["build_digest"]
+        assert (
+            immutable_state["projections"]
+            == session.execute(
+                select(
+                    SearchProjection.id,
+                    SearchProjection.projection_config_digest,
+                    SearchProjection.text_search_config,
+                ).where(SearchProjection.corpus_build_id == build.id)
+            ).all()
+        )
+        assert (
+            immutable_state["units"]
+            == session.execute(
+                select(
+                    SearchUnit.id,
+                    SearchUnit.search_projection_id,
+                    SearchUnit.search_text,
+                )
+            ).all()
+        )
+        assert (
+            immutable_state["evidence_sets"]
+            == session.execute(
+                select(EvidenceSet.id, EvidenceSet.assembly_config_digest).where(
+                    EvidenceSet.corpus_build_id == build.id
+                )
+            ).all()
+        )
+        assert (
+            immutable_state["evidence_units"]
+            == session.execute(
+                select(EvidenceUnit.id, EvidenceUnit.rendered_content_sha256).where(
+                    EvidenceUnit.corpus_build_id == build.id
+                )
+            ).all()
+        )
+        session.close()
+        session = session_factory()()
+        assert [mos.runtime_status, layout.runtime_status, xsd.runtime_status] == [
+            RuntimeStatus.RESOLVED.value,
+            RuntimeStatus.RESOLVED.value,
+            RuntimeStatus.RESOLVED.value,
+        ], [mos.provenance, layout.provenance, xsd.provenance]
+        assert mos.resolved_value["value"].startswith("Consultar S-1210 {ideDmDev}")
+        assert layout.resolved_value == {"value": "N"}
+        assert xsd.resolved_value == {"value": fact.string_value}
+        for resolution in (mos, layout, xsd):
+            assert session.scalars(
+                select(FactResolutionSupport).where(
+                    FactResolutionSupport.fact_resolution_id == resolution.id
+                )
+            ).all()
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_fact_resolution_statuses_and_no_bypass_postgresql(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        mos_evidence, layout_evidence, _ = _resolution_fixture(session, snapshot, build)
+        request, _ = requested_fact(session, build, "LAYOUT_TYPE", "EVENT", "S-9999")
+        not_applicable, _ = resolve_requested_fact(session, request, "MOS")
+        miss, _ = resolve_requested_fact(session, request, "LAYOUT", mos_evidence)
+        unsupported_request, _ = requested_fact(
+            session, build, "LAYOUT_TYPE", "EVENT", "S-UNKNOWN"
+        )
+        unsupported, _ = resolve_requested_fact(
+            session, unsupported_request, "LAYOUT", layout_evidence
+        )
+        aspect_request, _ = requested_fact(
+            session, build, "XSD_MAX_OCCURS", "EVENT", "S-9999"
+        )
+        aspect, _ = resolve_requested_fact(session, aspect_request, "XSD")
+        assert (
+            not_applicable.runtime_status == RuntimeStatus.SOURCE_NOT_APPLICABLE.value
+        )
+        assert miss.runtime_status == RuntimeStatus.NO_RELEVANT_EVIDENCE.value
+        assert miss.resolved_value is None
+        assert unsupported.runtime_status == RuntimeStatus.UNSUPPORTED.value
+        assert aspect.runtime_status == RuntimeStatus.ASPECT_NOT_COVERED.value
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_fact_resolution_idempotency_postgresql(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        _, evidence, _ = _resolution_fixture(session, snapshot, build)
+        request, _ = requested_fact(session, build, "LAYOUT_TYPE", "EVENT", "S-9999")
+        first, _ = resolve_requested_fact(session, request, "LAYOUT", evidence)
+        session.commit()
+        before = tuple(
+            count_rows(session, model)
+            for model in (RequestedFact, FactResolution, FactResolutionSupport)
+        )
+        same_request, created = requested_fact(
+            session, build, "LAYOUT_TYPE", "EVENT", "S-9999"
+        )
+        second, created_resolution = resolve_requested_fact(
+            session, same_request, "LAYOUT", evidence
+        )
+        session.commit()
+        assert not created and not created_resolution and first.id == second.id
+        assert before == tuple(
+            count_rows(session, model)
+            for model in (RequestedFact, FactResolution, FactResolutionSupport)
+        )
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_fact_resolution_rollback_postgresql(tmp_path, monkeypatch):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        build_id = build.id
+        _, evidence, _ = _resolution_fixture(session, snapshot, build)
+        session.commit()
+        import rag_esocial.fact_resolution_service as module
+
+        original = module.FactResolutionSupport
+
+        class FailingSupport(original):
+            def __init__(self, *args, **kwargs):
+                raise RuntimeError("injected resolution failure")
+
+        monkeypatch.setattr(module, "FactResolutionSupport", FailingSupport)
+        request, _ = requested_fact(session, build, "LAYOUT_TYPE", "EVENT", "S-9999")
+        try:
+            resolve_requested_fact(session, request, "LAYOUT", evidence)
+        except RuntimeError:
+            session.rollback()
+        session.close()
+        session = session_factory()()
+        assert not session.scalars(
+            select(RequestedFact).where(RequestedFact.corpus_build_id == build_id)
+        ).all()
+        assert not session.scalars(
+            select(FactResolution)
+            .join(RequestedFact)
+            .where(RequestedFact.corpus_build_id == build_id)
+        ).all()
+        assert session.scalars(
+            select(EvidenceSet).where(EvidenceSet.corpus_build_id == build_id)
+        ).all()
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_fact_resolution_two_builds_postgresql(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        _, evidence, _ = _resolution_fixture(session, snapshot, build)
+        request, _ = requested_fact(session, build, "LAYOUT_TYPE", "EVENT", "S-9999")
+        first, _ = resolve_requested_fact(session, request, "LAYOUT", evidence)
+        session.commit()
+        build2 = create_build(session, snapshot.slug, "fact-resolution-v2", {})
+        ids["builds"].append(build2.id)
+        _, evidence2, _ = _resolution_fixture(session, snapshot, build2)
+        request2, _ = requested_fact(session, build2, "LAYOUT_TYPE", "EVENT", "S-9999")
+        second, _ = resolve_requested_fact(session, request2, "LAYOUT", evidence2)
+        session.commit()
+        first_support = session.scalar(
+            select(FactResolutionSupport).where(
+                FactResolutionSupport.fact_resolution_id == first.id
+            )
+        )
+        second_support = session.scalar(
+            select(FactResolutionSupport).where(
+                FactResolutionSupport.fact_resolution_id == second.id
+            )
+        )
+        assert (
+            request.id != request2.id
+            and request.request_digest == request2.request_digest
+        )
+        assert first.id != second.id
+        assert first_support.id != second_support.id
+        assert (
+            session.get(EvidenceUnit, first_support.evidence_unit_id).citation_target_id
+            == session.get(
+                EvidenceUnit, second_support.evidence_unit_id
+            ).citation_target_id
+        )
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_fact_resolution_evaluation_report_is_deterministic(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        _resolution_fixture(session, snapshot, build)
+        session.commit()
+        dataset = Path("evaluation/dev/fact_resolution_status_v1.json")
+        first = evaluate_fact_resolution_status(session, build, dataset)
+        session.commit()
+        second = evaluate_fact_resolution_status(session, build, dataset)
+        session.commit()
+        one, two = tmp_path / "facts-one.json", tmp_path / "facts-two.json"
+        write_report(first, one)
+        write_report(second, two)
+        assert first == second and one.read_bytes() == two.read_bytes()
+        assert first["aggregates"]["RuntimeStatusExactMatch"] == 1
+        assert first["aggregates"]["NoRelevantEvidenceRateOnCovered"] == 0.25
     finally:
         cleanup(session, ids)
         session.close()

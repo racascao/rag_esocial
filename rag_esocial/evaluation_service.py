@@ -6,8 +6,11 @@ from pathlib import Path
 from sqlalchemy import select, text
 
 from .evidence_service import assemble_evidence
+from .fact_resolution_service import requested_fact, resolve_requested_fact
 from .models.build import CitationTarget, CorpusBuildCitationTarget
 from .models.evidence import EvidenceSetItem, EvidenceUnit
+from .models.fact_resolution import RuntimeStatus
+from .models.search import SearchProjection
 from .search_service import materialize_projection
 
 
@@ -147,3 +150,117 @@ def write_report(report, output_path):
     Path(output_path).write_text(
         json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
     )
+
+
+def _expected_runtime(case):
+    return case.get(
+        "expected_runtime_status",
+        {
+            "COVERED": RuntimeStatus.RESOLVED.value,
+            "SOURCE_NOT_APPLICABLE": RuntimeStatus.SOURCE_NOT_APPLICABLE.value,
+            "ASPECT_NOT_COVERED": RuntimeStatus.ASPECT_NOT_COVERED.value,
+            "CORPUS_UNSUPPORTED": RuntimeStatus.UNSUPPORTED.value,
+        }[case["gold_coverage_state"]],
+    )
+
+
+def evaluate_fact_resolution_status(session, build, dataset_path):
+    data, digest = load_dataset(dataset_path)
+    results = []
+    for case in data["cases"]:
+        request = case["requested_fact"]
+        item, _ = requested_fact(
+            session,
+            build,
+            request["fact_type"],
+            request["subject_kind"],
+            request["subject_key"],
+            request.get("qualifiers", {}),
+        )
+        evidence_set = None
+        if case.get("profile"):
+            projection = session.scalar(
+                select(SearchProjection).where(
+                    SearchProjection.corpus_build_id == build.id,
+                    SearchProjection.profile == case["profile"],
+                )
+            )
+            if not projection:
+                raise ValueError(f"PROJECTION_NOT_MATERIALIZED:{case['case_id']}")
+            evidence_set, _ = assemble_evidence(
+                session, build, projection, case["query"], case.get("top_k", 5)
+            )
+        resolution, _ = resolve_requested_fact(
+            session, item, case["source"], evidence_set
+        )
+        expected_runtime = _expected_runtime(case)
+        value_match = (
+            resolution.resolved_value == case.get("expected_value")
+            if resolution.runtime_status == RuntimeStatus.RESOLVED.value
+            and "expected_value" in case
+            else None
+        )
+        results.append(
+            {
+                "case_id": case["case_id"],
+                "gold_coverage_state": case["gold_coverage_state"],
+                "expected_runtime_status": expected_runtime,
+                "runtime_status": resolution.runtime_status,
+                "resolved_value": resolution.resolved_value,
+                "value_exact_match": value_match,
+                "resolution_id": resolution.id,
+            }
+        )
+    covered = [row for row in results if row["gold_coverage_state"] == "COVERED"]
+    resolved = [
+        row for row in covered if row["runtime_status"] == RuntimeStatus.RESOLVED.value
+    ]
+    counts = {}
+    runtime_counts = {}
+    for row in results:
+        counts[f"{row['gold_coverage_state']}:{row['runtime_status']}"] = (
+            counts.get(f"{row['gold_coverage_state']}:{row['runtime_status']}", 0) + 1
+        )
+        runtime_counts[row["runtime_status"]] = (
+            runtime_counts.get(row["runtime_status"], 0) + 1
+        )
+    aggregates = {
+        "CoveredFactResolutionRecall": sum(
+            bool(row["value_exact_match"]) for row in covered
+        )
+        / len(covered)
+        if covered
+        else None,
+        "ResolvedValueExactMatch": sum(
+            bool(row["value_exact_match"]) for row in resolved
+        )
+        / len(resolved)
+        if resolved
+        else None,
+        "RuntimeStatusExactMatch": sum(
+            row["runtime_status"] == row["expected_runtime_status"] for row in results
+        )
+        / len(results)
+        if results
+        else None,
+        "NoRelevantEvidenceRateOnCovered": sum(
+            row["runtime_status"] == RuntimeStatus.NO_RELEVANT_EVIDENCE.value
+            for row in covered
+        )
+        / len(covered)
+        if covered
+        else None,
+    }
+    return {
+        "schema_version": "fact-resolution-status-v1",
+        "dataset_id": data["dataset_id"],
+        "dataset_kind": data["dataset_kind"],
+        "dataset_sha256": digest,
+        "build_id": build.id,
+        "build_digest": build.build_digest,
+        "resolver_revision": "fact-resolver-v1",
+        "results": results,
+        "aggregates": aggregates,
+        "confusion_counts": counts,
+        "runtime_status_counts": runtime_counts,
+    }

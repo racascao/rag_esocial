@@ -24,3 +24,7 @@
 - Extração PDF deve permanecer separada do parser estrutural e não usa OCR automaticamente.
 - Materialização MOS é transacional; referências persistidas exigem origem citável.
 - Reparse no mesmo build/artifact não pode duplicar materialização; mudança de parser exige novo build.
+- Unidade de fact resolution é RequestedFact × Source.
+- RuntimeStatus é distinto de GoldCoverageState; NO_RELEVANT_EVIDENCE é miss de runtime, não ausência gold.
+- Coverage precheck não pode vazar valor factual; RESOLVED exige suporte autorizado por EvidenceSet.
+- Status negativo nunca vira valor estimado; fact resolution é determinística.

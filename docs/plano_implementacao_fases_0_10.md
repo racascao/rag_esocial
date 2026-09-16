@@ -20,3 +20,6 @@
 - Fase 10: avaliação e operação.
 
 Invariantes são introduzidos na fase em que surgem. NL → RequestedFact, G2, Example/Observation, relações/divergências e referências órfãs permanecem decisões dependentes de evidência e amostragem.
+# Atualização de roadmap
+
+Fase 7 — COMPLETE: RequestedFact, resolução determinística por fonte, status/abstention e avaliação DEV. Próxima: Fase 8 — Answer Contract + modelo + benchmark/integration.
