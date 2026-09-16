@@ -20,6 +20,8 @@ from rag_esocial.corpus import (
     verify_snapshot,
 )
 from rag_esocial.db import session_factory
+from rag_esocial.evaluation_service import evaluate_retrieval_evidence, write_report
+from rag_esocial.evidence_service import assemble_evidence
 from rag_esocial.facts_service import build_facts
 from rag_esocial.layout_materializer import materialize_layout
 from rag_esocial.layout_parser import parse_layout_html
@@ -38,6 +40,7 @@ from rag_esocial.models.corpus import (
     DocumentVersion,
     SnapshotMember,
 )
+from rag_esocial.models.evidence import EvidenceSet, EvidenceSetItem, EvidenceUnit
 from rag_esocial.models.facts import (
     EntityRelation,
     ReferenceResolution,
@@ -281,6 +284,9 @@ condition='REGRA_LAYOUT'>Descrição REGRA_LAYOUT e Tabela 05</p>
 
 def cleanup(session, ids):
     for model in [
+        EvidenceSetItem,
+        EvidenceUnit,
+        EvidenceSet,
         SearchUnitCitationTarget,
         SearchUnit,
         SearchProjection,
@@ -1100,6 +1106,136 @@ def test_search_projection_two_builds_are_specific_and_targets_transversal(tmp_p
         assert session.scalar(
             select(CanonicalEntity).where(CanonicalEntity.stable_key == "EVENT:S-9999")
         )
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_evidence_assembly_postgresql_and_idempotency(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        materialize_phase4_fixture(session, build, snapshot)
+        session.commit()
+        projection, _ = materialize_projection(session, build, "LAYOUT_FIELD")
+        session.commit()
+        evidence_set, created = assemble_evidence(session, build, projection, "aliqRat")
+        session.commit()
+        session.close()
+        session = session_factory()()
+        items = session.scalars(
+            select(EvidenceSetItem).where(
+                EvidenceSetItem.evidence_set_id == evidence_set.id
+            )
+        ).all()
+        unit = session.get(EvidenceUnit, items[0].evidence_unit_id)
+        assert created and items and "aliqRat" in unit.rendered_content
+        assert (
+            unit.rendered_content
+            != session.get(SearchUnit, items[0].source_search_unit_id).search_text
+        )
+        same, created_again = assemble_evidence(
+            session,
+            session.get(CorpusBuild, build.id),
+            session.get(SearchProjection, projection.id),
+            "aliqRat",
+        )
+        session.commit()
+        assert not created_again and same.id == evidence_set.id
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_evidence_rollback_and_two_builds_postgresql(tmp_path, monkeypatch):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        materialize_phase4_fixture(session, build, snapshot)
+        session.commit()
+        projection, _ = materialize_projection(session, build, "LAYOUT_FIELD")
+        session.commit()
+        import rag_esocial.evidence_service as evidence_module
+
+        original = evidence_module._render
+
+        def fail_after_retrieval(*args, **kwargs):
+            raise RuntimeError("evidence rollback")
+
+        monkeypatch.setattr(evidence_module, "_render", fail_after_retrieval)
+        try:
+            assemble_evidence(session, build, projection, "aliqRat")
+        except RuntimeError:
+            session.rollback()
+        assert not session.scalars(
+            select(EvidenceSet).where(EvidenceSet.corpus_build_id == build.id)
+        ).all()
+        monkeypatch.setattr(evidence_module, "_render", original)
+        build2 = create_build(session, snapshot.slug, "evidence-test-v2", {})
+        ids["builds"].append(build2.id)
+        materialize_phase4_fixture(session, build2, snapshot)
+        session.commit()
+        projection2, _ = materialize_projection(session, build2, "LAYOUT_FIELD")
+        session.commit()
+        first, _ = assemble_evidence(session, build, projection, "aliqRat")
+        second, _ = assemble_evidence(session, build2, projection2, "aliqRat")
+        session.commit()
+        one = session.scalar(
+            select(EvidenceUnit)
+            .join(EvidenceSetItem)
+            .where(EvidenceSetItem.evidence_set_id == first.id)
+        )
+        two = session.scalar(
+            select(EvidenceUnit)
+            .join(EvidenceSetItem)
+            .where(EvidenceSetItem.evidence_set_id == second.id)
+        )
+        assert one.id != two.id and one.citation_target_id == two.citation_target_id
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_dev_retrieval_evidence_evaluation_is_deterministic(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        materialize_phase4_fixture(session, build, snapshot)
+        session.commit()
+        dataset = Path("evaluation/dev/retrieval_evidence_v1.json")
+        first = evaluate_retrieval_evidence(session, build, dataset)
+        session.commit()
+        projection_state = session.execute(
+            select(
+                SearchProjection.id,
+                SearchProjection.profile,
+                SearchProjection.projection_config_digest,
+                SearchProjection.text_search_config,
+            ).where(SearchProjection.corpus_build_id == build.id)
+        ).all()
+        second = evaluate_retrieval_evidence(session, build, dataset)
+        session.commit()
+        assert (
+            projection_state
+            == session.execute(
+                select(
+                    SearchProjection.id,
+                    SearchProjection.profile,
+                    SearchProjection.projection_config_digest,
+                    SearchProjection.text_search_config,
+                ).where(SearchProjection.corpus_build_id == build.id)
+            ).all()
+        )
+        first_path = tmp_path / "report-one.json"
+        second_path = tmp_path / "report-two.json"
+        write_report(first, first_path)
+        write_report(second, second_path)
+        assert first == second
+        assert first_path.read_bytes() == second_path.read_bytes()
+        assert len(first["results"]) >= 6
+        assert first["aggregates"]
+        assert first["dataset_kind"] == "DEV_NOT_BLIND_HOLDOUT"
+        assert all("mrr" in item["metrics"] for item in first["results"])
     finally:
         cleanup(session, ids)
         session.close()

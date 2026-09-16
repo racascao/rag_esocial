@@ -8,6 +8,8 @@
 - Fase 3C: COMPLETE para `XSD_PACKAGE` — parser estrutural, materialização PostgreSQL, E2E em nova sessão, idempotência, rollback, provenance e B1/B2 com CitationTargets compartilhadas.
 - Fase 4: COMPLETE — SourceFacts D1/D2, CanonicalEntities transversais, resolução determinística de referências, relações auditáveis e validação PostgreSQL; próxima Fase 5: SearchProjection + baseline FTS.
 - Fase 5: COMPLETE — SearchProjection configurável, nove perfis de SearchUnit e baseline PostgreSQL FTS; próxima Fase 6: retrieval e evidence assembly.
+- Fase 6: COMPLETE — retrieval FTS, EvidenceSet/EvidenceUnit renderizada de fonte autorizada e validação PostgreSQL; próxima Fase 7: RequestedFact e resolução orientada à consulta.
+- Avaliação DEV da Fase 6: dataset versionado, métricas por profile e relatório determinístico; não é holdout cego nem seleciona profile vencedor.
 - Fase 3: identidade determinística, incluindo tipos compartilhados `T_*/TS_*`.
 - Fase 4: fatos e travessia D3; `FactType` não é D1/D2/D3.
 - Fase 5: `SearchProjection` e `SearchUnit`, distintos de `CitationTarget`.

@@ -1,3 +1,4 @@
+import json
 import shutil
 import uuid
 from datetime import datetime, timezone
@@ -19,6 +20,8 @@ from .corpus import (
     verify_snapshot,
 )
 from .db import check_connection, session_factory
+from .evaluation_service import evaluate_retrieval_evidence, write_report
+from .evidence_service import assemble_evidence
 from .facts_service import build_facts
 from .layout_materializer import materialize_layout
 from .layout_parser import parse_layout_html
@@ -30,6 +33,7 @@ from .models.corpus import (
     DocumentVersion,
     SnapshotMember,
 )
+from .models.evidence import EvidenceSet, EvidenceSetItem, EvidenceUnit
 from .models.facts import EntityRelation, ReferenceResolution, ResolvedFact, SourceFact
 from .models.layout import LayoutDocument
 from .models.mos import MosDocument
@@ -66,6 +70,10 @@ facts_app = typer.Typer(help="Fatos determinísticos e resolução de referênci
 app.add_typer(facts_app, name="facts")
 search_app = typer.Typer(help="Projeções experimentais e busca lexical FTS.")
 app.add_typer(search_app, name="search")
+evidence_app = typer.Typer(help="Retrieval FTS e montagem de evidência autorizada.")
+app.add_typer(evidence_app, name="evidence")
+eval_app = typer.Typer(help="Avaliação DEV de retrieval e evidence assembly.")
+app.add_typer(eval_app, name="eval")
 console = Console()
 
 
@@ -544,3 +552,78 @@ def search_status(build: str = typer.Option(..., "--build")) -> None:
                 or 0
             )
             console.print(f"{projection.profile}: {count}")
+
+
+@evidence_app.command("assemble")
+def evidence_assemble(
+    projection: str = typer.Option(..., "--projection"),
+    query: str = typer.Option(..., "--query"),
+    top_k: int = typer.Option(5, "--top-k"),
+) -> None:
+    with session_factory()() as session:
+        item = session.get(SearchProjection, projection)
+        if not item:
+            raise typer.Exit(code=1)
+        build = session.get(CorpusBuild, item.corpus_build_id)
+        try:
+            result, created = assemble_evidence(session, build, item, query, top_k)
+            session.commit()
+        except Exception as error:
+            session.rollback()
+            console.print(f"Falha na evidência: {error}")
+            raise typer.Exit(code=1) from error
+        console.print(
+            f"EvidenceSet {'criado' if created else 'existente'}: {result.id}"
+        )
+
+
+@evidence_app.command("status")
+def evidence_status(build: str = typer.Option(..., "--build")) -> None:
+    with session_factory()() as session:
+        target = resolve_build(session, build)
+        if not target:
+            raise typer.Exit(code=1)
+        for label, model in (
+            ("EvidenceSets", EvidenceSet),
+            ("EvidenceUnits", EvidenceUnit),
+            ("EvidenceItems", EvidenceSetItem),
+        ):
+            count = (
+                session.scalar(
+                    select(func.count())
+                    .select_from(model)
+                    .join(
+                        EvidenceSet, EvidenceSet.id == EvidenceSetItem.evidence_set_id
+                    )
+                    if model is EvidenceSetItem
+                    else select(func.count())
+                    .select_from(model)
+                    .where(model.corpus_build_id == target.id)
+                )
+                or 0
+            )
+            console.print(f"{label}: {count}")
+
+
+@eval_app.command("retrieval")
+def eval_retrieval(
+    build: str = typer.Option(..., "--build"),
+    dataset: Path = typer.Option(
+        Path("evaluation/dev/retrieval_evidence_v1.json"), "--dataset"
+    ),
+    output: Path | None = typer.Option(None, "--output"),
+) -> None:
+    with session_factory()() as session:
+        target = resolve_build(session, build)
+        if not target:
+            raise typer.Exit(code=1)
+        try:
+            report = evaluate_retrieval_evidence(session, target, dataset)
+            if output:
+                write_report(report, output)
+            session.commit()
+        except Exception as error:
+            session.rollback()
+            console.print(f"Falha na avaliação: {error}")
+            raise typer.Exit(code=1) from error
+        console.print_json(json.dumps(report, ensure_ascii=False, sort_keys=True))
