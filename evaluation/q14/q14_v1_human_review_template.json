@@ -1,0 +1,20 @@
+{
+  "schema_version": "q14-human-review-v1",
+  "dataset_id": "esocial-q14-v1",
+  "cases": [
+    {"case_id": "mos-answered-conceito", "legal_or_domain_correctness": null, "semantic_groundedness": null, "completeness": null, "notes": null},
+    {"case_id": "mos-answered-obrigatoriedade", "legal_or_domain_correctness": null, "semantic_groundedness": null, "completeness": null, "notes": null},
+    {"case_id": "mos-answered-prazo", "legal_or_domain_correctness": null, "semantic_groundedness": null, "completeness": null, "notes": null},
+    {"case_id": "layout-answered-type", "legal_or_domain_correctness": null, "semantic_groundedness": null, "completeness": null, "notes": null},
+    {"case_id": "layout-answered-size", "legal_or_domain_correctness": null, "semantic_groundedness": null, "completeness": null, "notes": null},
+    {"case_id": "layout-answered-occurrence", "legal_or_domain_correctness": null, "semantic_groundedness": null, "completeness": null, "notes": null},
+    {"case_id": "xsd-answered-max-occurs", "legal_or_domain_correctness": null, "semantic_groundedness": null, "completeness": null, "notes": null},
+    {"case_id": "xsd-answered-min-occurs", "legal_or_domain_correctness": null, "semantic_groundedness": null, "completeness": null, "notes": null},
+    {"case_id": "mos-partial", "legal_or_domain_correctness": null, "semantic_groundedness": null, "completeness": null, "notes": null},
+    {"case_id": "layout-partial", "legal_or_domain_correctness": null, "semantic_groundedness": null, "completeness": null, "notes": null},
+    {"case_id": "xsd-partial", "legal_or_domain_correctness": null, "semantic_groundedness": null, "completeness": null, "notes": null},
+    {"case_id": "mos-abstained", "legal_or_domain_correctness": null, "semantic_groundedness": null, "completeness": null, "notes": null},
+    {"case_id": "layout-abstained", "legal_or_domain_correctness": null, "semantic_groundedness": null, "completeness": null, "notes": null},
+    {"case_id": "xsd-abstained", "legal_or_domain_correctness": null, "semantic_groundedness": null, "completeness": null, "notes": null}
+  ]
+}

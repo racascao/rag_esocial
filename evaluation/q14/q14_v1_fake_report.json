@@ -1,0 +1,342 @@
+{
+  "aggregates": {
+    "AbstentionComplianceRate": 1.0,
+    "AnswerRunSuccessRate": 1.0,
+    "CitationMembershipValidity": 1.0,
+    "ClaimCitationCoverage": 1.0,
+    "ExpectedFactReferenceCoverage": 1.0,
+    "ModelCallAvoidanceOnAbstain": 1.0,
+    "PartialAnswerContractCompliance": 1.0,
+    "StructuredOutputValidRate": 1.0,
+    "UnauthorizedCitationRate": 0.0,
+    "UnauthorizedFactReferenceRate": 0.0
+  },
+  "aggregates_by_family": [
+    {
+      "case_count": 5,
+      "family": "MOS",
+      "status_exact_match_rate": 1.0
+    },
+    {
+      "case_count": 5,
+      "family": "LAYOUT",
+      "status_exact_match_rate": 1.0
+    },
+    {
+      "case_count": 4,
+      "family": "XSD",
+      "status_exact_match_rate": 1.0
+    }
+  ],
+  "build_digest": "5b4e50d08a0cfb33f1fc9205fa6dc39cb386e0d90dd3121d1a92935300baba0f",
+  "build_id": "d264f2f9-c8ac-4238-b8eb-b9d6daac84b0",
+  "contract_revision": "answer-contract-v1",
+  "dataset_id": "esocial-q14-v1",
+  "dataset_kind": "DEV_NOT_BLIND_HOLDOUT",
+  "dataset_sha256": "30dad081fde8b59f448bd8675fdfa298c22c8d2da5dddf9ba7f30e3e8796e3c7",
+  "model": "gemma4:12b",
+  "model_config": {
+    "num_ctx": 8192,
+    "num_predict": 256,
+    "provider": "ollama",
+    "seed": 42,
+    "temperature": 0,
+    "timeout_seconds": 300
+  },
+  "model_config_digest": "bf978ad2797af2e5d835d277f04d62b18e18d2d377d0e55870ef7f755ebced64",
+  "prompt_revision": "answer-prompt-v1",
+  "provider": "fake-deterministic",
+  "results": [
+    {
+      "case_id": "mos-answered-conceito",
+      "citation_membership_valid": true,
+      "claims": [
+        {
+          "claim_id": "C1",
+          "evidence_refs": [
+            "E1"
+          ],
+          "fact_resolution_refs": [
+            "F1"
+          ],
+          "text": "Resposta baseada exclusivamente nos fatos autorizados F1."
+        }
+      ],
+      "expected_status": "ANSWERED",
+      "family": "MOS",
+      "model_call_count": 1,
+      "observed_status": "ANSWERED",
+      "provider_metadata": {},
+      "resolved_fact_count": 1,
+      "validation_errors": []
+    },
+    {
+      "case_id": "mos-answered-obrigatoriedade",
+      "citation_membership_valid": true,
+      "claims": [
+        {
+          "claim_id": "C1",
+          "evidence_refs": [
+            "E1"
+          ],
+          "fact_resolution_refs": [
+            "F1"
+          ],
+          "text": "Resposta baseada exclusivamente nos fatos autorizados F1."
+        }
+      ],
+      "expected_status": "ANSWERED",
+      "family": "MOS",
+      "model_call_count": 1,
+      "observed_status": "ANSWERED",
+      "provider_metadata": {},
+      "resolved_fact_count": 1,
+      "validation_errors": []
+    },
+    {
+      "case_id": "mos-answered-prazo",
+      "citation_membership_valid": true,
+      "claims": [
+        {
+          "claim_id": "C1",
+          "evidence_refs": [
+            "E1"
+          ],
+          "fact_resolution_refs": [
+            "F1"
+          ],
+          "text": "Resposta baseada exclusivamente nos fatos autorizados F1."
+        }
+      ],
+      "expected_status": "ANSWERED",
+      "family": "MOS",
+      "model_call_count": 1,
+      "observed_status": "ANSWERED",
+      "provider_metadata": {},
+      "resolved_fact_count": 1,
+      "validation_errors": []
+    },
+    {
+      "case_id": "layout-answered-type",
+      "citation_membership_valid": true,
+      "claims": [
+        {
+          "claim_id": "C1",
+          "evidence_refs": [
+            "E1"
+          ],
+          "fact_resolution_refs": [
+            "F1"
+          ],
+          "text": "Resposta baseada exclusivamente nos fatos autorizados F1."
+        }
+      ],
+      "expected_status": "ANSWERED",
+      "family": "LAYOUT",
+      "model_call_count": 1,
+      "observed_status": "ANSWERED",
+      "provider_metadata": {},
+      "resolved_fact_count": 1,
+      "validation_errors": []
+    },
+    {
+      "case_id": "layout-answered-size",
+      "citation_membership_valid": true,
+      "claims": [
+        {
+          "claim_id": "C1",
+          "evidence_refs": [
+            "E1"
+          ],
+          "fact_resolution_refs": [
+            "F1"
+          ],
+          "text": "Resposta baseada exclusivamente nos fatos autorizados F1."
+        }
+      ],
+      "expected_status": "ANSWERED",
+      "family": "LAYOUT",
+      "model_call_count": 1,
+      "observed_status": "ANSWERED",
+      "provider_metadata": {},
+      "resolved_fact_count": 1,
+      "validation_errors": []
+    },
+    {
+      "case_id": "layout-answered-occurrence",
+      "citation_membership_valid": true,
+      "claims": [
+        {
+          "claim_id": "C1",
+          "evidence_refs": [
+            "E1"
+          ],
+          "fact_resolution_refs": [
+            "F1"
+          ],
+          "text": "Resposta baseada exclusivamente nos fatos autorizados F1."
+        }
+      ],
+      "expected_status": "ANSWERED",
+      "family": "LAYOUT",
+      "model_call_count": 1,
+      "observed_status": "ANSWERED",
+      "provider_metadata": {},
+      "resolved_fact_count": 1,
+      "validation_errors": []
+    },
+    {
+      "case_id": "xsd-answered-max-occurs",
+      "citation_membership_valid": true,
+      "claims": [
+        {
+          "claim_id": "C1",
+          "evidence_refs": [
+            "E1"
+          ],
+          "fact_resolution_refs": [
+            "F1"
+          ],
+          "text": "Resposta baseada exclusivamente nos fatos autorizados F1."
+        }
+      ],
+      "expected_status": "ANSWERED",
+      "family": "XSD",
+      "model_call_count": 1,
+      "observed_status": "ANSWERED",
+      "provider_metadata": {},
+      "resolved_fact_count": 1,
+      "validation_errors": []
+    },
+    {
+      "case_id": "xsd-answered-min-occurs",
+      "citation_membership_valid": true,
+      "claims": [
+        {
+          "claim_id": "C1",
+          "evidence_refs": [
+            "E1"
+          ],
+          "fact_resolution_refs": [
+            "F1"
+          ],
+          "text": "Resposta baseada exclusivamente nos fatos autorizados F1."
+        }
+      ],
+      "expected_status": "ANSWERED",
+      "family": "XSD",
+      "model_call_count": 1,
+      "observed_status": "ANSWERED",
+      "provider_metadata": {},
+      "resolved_fact_count": 1,
+      "validation_errors": []
+    },
+    {
+      "case_id": "mos-partial",
+      "citation_membership_valid": true,
+      "claims": [
+        {
+          "claim_id": "C1",
+          "evidence_refs": [
+            "E1"
+          ],
+          "fact_resolution_refs": [
+            "F1"
+          ],
+          "text": "Resposta baseada exclusivamente nos fatos autorizados F1."
+        }
+      ],
+      "expected_status": "PARTIAL",
+      "family": "MOS",
+      "model_call_count": 1,
+      "observed_status": "PARTIAL",
+      "provider_metadata": {},
+      "resolved_fact_count": 1,
+      "validation_errors": []
+    },
+    {
+      "case_id": "layout-partial",
+      "citation_membership_valid": true,
+      "claims": [
+        {
+          "claim_id": "C1",
+          "evidence_refs": [
+            "E1"
+          ],
+          "fact_resolution_refs": [
+            "F1"
+          ],
+          "text": "Resposta baseada exclusivamente nos fatos autorizados F1."
+        }
+      ],
+      "expected_status": "PARTIAL",
+      "family": "LAYOUT",
+      "model_call_count": 1,
+      "observed_status": "PARTIAL",
+      "provider_metadata": {},
+      "resolved_fact_count": 1,
+      "validation_errors": []
+    },
+    {
+      "case_id": "xsd-partial",
+      "citation_membership_valid": true,
+      "claims": [
+        {
+          "claim_id": "C1",
+          "evidence_refs": [
+            "E1"
+          ],
+          "fact_resolution_refs": [
+            "F1"
+          ],
+          "text": "Resposta baseada exclusivamente nos fatos autorizados F1."
+        }
+      ],
+      "expected_status": "PARTIAL",
+      "family": "XSD",
+      "model_call_count": 1,
+      "observed_status": "PARTIAL",
+      "provider_metadata": {},
+      "resolved_fact_count": 1,
+      "validation_errors": []
+    },
+    {
+      "case_id": "mos-abstained",
+      "citation_membership_valid": true,
+      "claims": [],
+      "expected_status": "ABSTAINED",
+      "family": "MOS",
+      "model_call_count": 0,
+      "observed_status": "ABSTAINED",
+      "provider_metadata": {},
+      "resolved_fact_count": 0,
+      "validation_errors": []
+    },
+    {
+      "case_id": "layout-abstained",
+      "citation_membership_valid": true,
+      "claims": [],
+      "expected_status": "ABSTAINED",
+      "family": "LAYOUT",
+      "model_call_count": 0,
+      "observed_status": "ABSTAINED",
+      "provider_metadata": {},
+      "resolved_fact_count": 0,
+      "validation_errors": []
+    },
+    {
+      "case_id": "xsd-abstained",
+      "citation_membership_valid": true,
+      "claims": [],
+      "expected_status": "ABSTAINED",
+      "family": "XSD",
+      "model_call_count": 0,
+      "observed_status": "ABSTAINED",
+      "provider_metadata": {},
+      "resolved_fact_count": 0,
+      "validation_errors": []
+    }
+  ],
+  "runtime": {},
+  "schema_version": "q14-report-v1"
+}

@@ -10,6 +10,11 @@ from rich.table import Table
 from sqlalchemy import func, select
 
 from . import __version__
+from .answer_service import (
+    OllamaAnswerModelClient,
+    create_answer_request,
+    execute_answer,
+)
 from .build_service import create_build
 from .config import get_settings
 from .corpus import (
@@ -31,6 +36,13 @@ from .facts_service import build_facts
 from .layout_materializer import materialize_layout
 from .layout_parser import parse_layout_html
 from .logging_config import configure_logging
+from .models.answer import (
+    AnswerCitation,
+    AnswerClaim,
+    AnswerClaimFact,
+    AnswerRequest,
+    AnswerRun,
+)
 from .models.build import CorpusBuild
 from .models.corpus import (
     CorpusSnapshot,
@@ -54,6 +66,7 @@ from .models.xsd import (
 from .mos_materializer import materialize_mos
 from .mos_parser import parse_mos_text
 from .pdf_text import PdfTextExtractor
+from .q14_service import DeterministicQ14Client, evaluate_q14, validate_q14
 from .search_service import materialize_projection, search
 from .xsd_materializer import parse_and_materialize_xsd
 
@@ -80,6 +93,10 @@ evidence_app = typer.Typer(help="Retrieval FTS e montagem de evidência autoriza
 app.add_typer(evidence_app, name="evidence")
 eval_app = typer.Typer(help="Avaliação DEV de retrieval e evidence assembly.")
 app.add_typer(eval_app, name="eval")
+answer_app = typer.Typer(help="Geração single-source pelo Answer Contract.")
+app.add_typer(answer_app, name="answer")
+llm_app = typer.Typer(help="Diagnóstico do runtime local de geração.")
+app.add_typer(llm_app, name="llm")
 console = Console()
 
 
@@ -731,3 +748,171 @@ def eval_facts(
             console.print(f"Falha na avaliação de fatos: {error}")
             raise typer.Exit(code=1) from error
         console.print_json(json.dumps(report, ensure_ascii=False, sort_keys=True))
+
+
+def _answer_run_payload(session, run: AnswerRun) -> dict:
+    request = session.get(AnswerRequest, run.answer_request_id)
+    claims = session.scalars(
+        select(AnswerClaim)
+        .where(AnswerClaim.answer_run_id == run.id)
+        .order_by(AnswerClaim.claim_order)
+    ).all()
+    claim_payload = []
+    for claim in claims:
+        facts = session.scalars(
+            select(AnswerClaimFact.fact_resolution_id)
+            .where(AnswerClaimFact.answer_claim_id == claim.id)
+            .order_by(AnswerClaimFact.fact_resolution_id)
+        ).all()
+        citations = session.scalars(
+            select(AnswerCitation)
+            .where(AnswerCitation.answer_claim_id == claim.id)
+            .order_by(AnswerCitation.citation_order)
+        ).all()
+        claim_payload.append(
+            {
+                "claim_id": claim.claim_key,
+                "text": claim.text,
+                "text_sha256": claim.text_sha256,
+                "fact_resolution_ids": list(facts),
+                "evidence_unit_ids": [item.evidence_unit_id for item in citations],
+            }
+        )
+    return {
+        "run_id": run.id,
+        "request_id": run.answer_request_id,
+        "build_id": request.corpus_build_id,
+        "document_family": request.document_family,
+        "status": run.status,
+        "provider": run.provider,
+        "model": run.model_id,
+        "attempt_count": run.attempt_count,
+        "claims": claim_payload,
+        "rendered_answer": run.rendered_answer,
+        "validation_summary": run.validation_summary,
+    }
+
+
+@answer_app.command("generate")
+def answer_generate(
+    build: str = typer.Option(..., "--build"),
+    source: str = typer.Option(..., "--source"),
+    question: str = typer.Option(..., "--question"),
+    resolution: list[str] = typer.Option(..., "--resolution"),
+) -> None:
+    settings = get_settings()
+    with session_factory()() as session:
+        target = resolve_build(session, build)
+        resolutions = [session.get(FactResolution, item) for item in resolution]
+        if not target or any(item is None for item in resolutions):
+            console.print("Build ou FactResolution não encontrado")
+            raise typer.Exit(code=1)
+        try:
+            request, _ = create_answer_request(
+                session,
+                target,
+                source.upper(),
+                question,
+                resolutions,
+                model_id=settings.llm_model,
+            )
+            run = execute_answer(
+                session,
+                request,
+                OllamaAnswerModelClient(
+                    base_url=settings.ollama_base_url, model=settings.llm_model
+                ),
+            )
+            session.commit()
+            payload = _answer_run_payload(session, run)
+        except Exception as error:
+            session.rollback()
+            console.print(f"Falha na geração: {error}")
+            raise typer.Exit(code=1) from error
+    console.print_json(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+
+
+@answer_app.command("show")
+def answer_show(run: str = typer.Option(..., "--run")) -> None:
+    with session_factory()() as session:
+        item = session.get(AnswerRun, run)
+        if not item:
+            console.print("AnswerRun não encontrado")
+            raise typer.Exit(code=1)
+        payload = _answer_run_payload(session, item)
+    console.print_json(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+
+
+@llm_app.command("status")
+def llm_status() -> None:
+    settings = get_settings()
+    status = OllamaAnswerModelClient(
+        base_url=settings.ollama_base_url, model=settings.llm_model
+    ).status()
+    status["host_diagnostic_url"] = settings.ollama_host_url
+    console.print_json(json.dumps(status, ensure_ascii=False, sort_keys=True))
+    if not status["reachable"] or not status["model_available"]:
+        raise typer.Exit(code=1)
+
+
+@eval_app.command("q14")
+def eval_q14(
+    build: str = typer.Option(..., "--build"),
+    dataset: Path = typer.Option(Path("evaluation/q14/q14_v1.json"), "--dataset"),
+    output: Path = typer.Option(Path("evaluation/q14/q14_v1_report.json"), "--output"),
+    fake: bool = typer.Option(False, "--fake"),
+    case: list[str] | None = typer.Option(None, "--case"),
+    validate_only: bool = typer.Option(False, "--validate-only"),
+) -> None:
+    settings = get_settings()
+    try:
+        _, digest = validate_q14(dataset)
+    except Exception as error:
+        console.print(f"Q14 inválido: {error}")
+        raise typer.Exit(code=1) from error
+    if validate_only:
+        console.print(f"Q14 VALID: {digest}")
+        return
+    with session_factory()() as session:
+        target = resolve_build(session, build)
+        if not target:
+            console.print("Build não encontrado")
+            raise typer.Exit(code=1)
+        runtime = {}
+        if fake:
+            factory = DeterministicQ14Client
+            provider = "fake-deterministic"
+        else:
+            diagnostic = OllamaAnswerModelClient(
+                base_url=settings.ollama_base_url, model=settings.llm_model
+            ).status()
+            if not diagnostic["reachable"] or not diagnostic["model_available"]:
+                console.print_json(
+                    json.dumps(diagnostic, ensure_ascii=False, sort_keys=True)
+                )
+                raise typer.Exit(code=1)
+            runtime = diagnostic
+            provider = "ollama"
+
+            def factory():
+                return OllamaAnswerModelClient(
+                    base_url=settings.ollama_base_url, model=settings.llm_model
+                )
+
+        try:
+            report = evaluate_q14(
+                session,
+                target,
+                dataset,
+                factory,
+                provider,
+                case_ids=case,
+                runtime_metadata=runtime,
+            )
+            write_report(report, output)
+            session.commit()
+        except Exception as error:
+            session.rollback()
+            console.print(f"Falha na avaliação Q14: {error}")
+            raise typer.Exit(code=1) from error
+    console.print_json(json.dumps(report, ensure_ascii=False, sort_keys=True))

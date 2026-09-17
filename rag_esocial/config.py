@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     app_name: str = "rag-esocial"
     app_version: str = "0.1.0"
     llm_model: str = "gemma4:12b"
+    ollama_base_url: str = "http://ollama:11434"
+    ollama_host_url: str = "http://localhost:11436"
     corpus_storage_path: str = "/app/data/corpus"
 
 

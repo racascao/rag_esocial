@@ -1,0 +1,156 @@
+{
+  "schema_version": "q14-v1",
+  "dataset_id": "esocial-q14-v1",
+  "dataset_kind": "DEV_NOT_BLIND_HOLDOUT",
+  "cases": [
+    {
+      "case_id": "mos-answered-conceito",
+      "source": "MOS",
+      "question": "Qual é o conceito do evento S-9999?",
+      "profile": "MOS_EVENT_SECTION",
+      "query": "S-9999",
+      "top_k": 5,
+      "expected_status": "ANSWERED",
+      "requested_facts": [{"fact_type": "EVENT_CONCEITO", "subject_kind": "EVENT", "subject_key": "S-9999", "qualifiers": {}}]
+    },
+    {
+      "case_id": "mos-answered-obrigatoriedade",
+      "source": "MOS",
+      "question": "Quem está obrigado ao evento S-9999?",
+      "profile": "MOS_EVENT_SECTION",
+      "query": "S-9999",
+      "top_k": 5,
+      "expected_status": "ANSWERED",
+      "requested_facts": [{"fact_type": "EVENT_CONCEITO", "subject_kind": "EVENT", "subject_key": "S-9999", "qualifiers": {"answer_aspect": "obrigatoriedade"}}]
+    },
+    {
+      "case_id": "mos-answered-prazo",
+      "source": "MOS",
+      "question": "Qual é o prazo de envio do evento S-9999?",
+      "profile": "MOS_EVENT_SECTION",
+      "query": "S-9999",
+      "top_k": 5,
+      "expected_status": "ANSWERED",
+      "requested_facts": [{"fact_type": "EVENT_PRAZO_DE_ENVIO", "subject_kind": "EVENT", "subject_key": "S-9999", "qualifiers": {}}]
+    },
+    {
+      "case_id": "layout-answered-type",
+      "source": "LAYOUT",
+      "question": "Qual é o tipo do campo aliqRat?",
+      "profile": "LAYOUT_FIELD",
+      "query": "aliqRat",
+      "top_k": 5,
+      "expected_status": "ANSWERED",
+      "requested_facts": [{"fact_type": "LAYOUT_TYPE", "subject_kind": "EVENT", "subject_key": "S-9999", "qualifiers": {}}]
+    },
+    {
+      "case_id": "layout-answered-size",
+      "source": "LAYOUT",
+      "question": "Qual é o tamanho do campo aliqRat?",
+      "profile": "LAYOUT_FIELD",
+      "query": "aliqRat",
+      "top_k": 5,
+      "expected_status": "ANSWERED",
+      "requested_facts": [{"fact_type": "LAYOUT_SIZE", "subject_kind": "EVENT", "subject_key": "S-9999", "qualifiers": {}}]
+    },
+    {
+      "case_id": "layout-answered-occurrence",
+      "source": "LAYOUT",
+      "question": "Qual é a ocorrência do campo aliqRat?",
+      "profile": "LAYOUT_FIELD",
+      "query": "aliqRat",
+      "top_k": 5,
+      "expected_status": "ANSWERED",
+      "requested_facts": [{"fact_type": "LAYOUT_OCCURRENCE", "subject_kind": "EVENT", "subject_key": "S-9999", "qualifiers": {}}]
+    },
+    {
+      "case_id": "xsd-answered-max-occurs",
+      "source": "XSD",
+      "question": "Qual é o maxOccurs do elemento id?",
+      "profile": "XSD_ELEMENT",
+      "query": "TS_Id",
+      "top_k": 5,
+      "expected_status": "ANSWERED",
+      "requested_facts": [{"fact_type": "XSD_MAX_OCCURS", "subject_kind": "FIELD", "subject_key": "XSD/urn:fixture:1.0/schema/evento_fixture/evtFixture/id", "qualifiers": {}}]
+    },
+    {
+      "case_id": "xsd-answered-min-occurs",
+      "source": "XSD",
+      "question": "Qual é o minOccurs do elemento id?",
+      "profile": "XSD_ELEMENT",
+      "query": "TS_Id",
+      "top_k": 5,
+      "expected_status": "ANSWERED",
+      "requested_facts": [{"fact_type": "XSD_MIN_OCCURS", "subject_kind": "FIELD", "subject_key": "XSD/urn:fixture:1.0/schema/evento_fixture/evtFixture/id", "qualifiers": {}}]
+    },
+    {
+      "case_id": "mos-partial",
+      "source": "MOS",
+      "question": "Informe o conceito e o tipo de leiaute do evento S-9999.",
+      "profile": "MOS_EVENT_SECTION",
+      "query": "S-9999",
+      "top_k": 5,
+      "expected_status": "PARTIAL",
+      "requested_facts": [
+        {"fact_type": "EVENT_CONCEITO", "subject_kind": "EVENT", "subject_key": "S-9999", "qualifiers": {}},
+        {"fact_type": "LAYOUT_TYPE", "subject_kind": "EVENT", "subject_key": "S-9999", "qualifiers": {}}
+      ]
+    },
+    {
+      "case_id": "layout-partial",
+      "source": "LAYOUT",
+      "question": "Informe o tipo do leiaute e o maxOccurs XSD do evento S-9999.",
+      "profile": "LAYOUT_FIELD",
+      "query": "aliqRat",
+      "top_k": 5,
+      "expected_status": "PARTIAL",
+      "requested_facts": [
+        {"fact_type": "LAYOUT_TYPE", "subject_kind": "EVENT", "subject_key": "S-9999", "qualifiers": {}},
+        {"fact_type": "XSD_MAX_OCCURS", "subject_kind": "FIELD", "subject_key": "XSD/urn:fixture:1.0/schema/evento_fixture/evtFixture/id", "qualifiers": {}}
+      ]
+    },
+    {
+      "case_id": "xsd-partial",
+      "source": "XSD",
+      "question": "Informe o maxOccurs XSD e o tipo de leiaute do campo.",
+      "profile": "XSD_ELEMENT",
+      "query": "TS_Id",
+      "top_k": 5,
+      "expected_status": "PARTIAL",
+      "requested_facts": [
+        {"fact_type": "XSD_MAX_OCCURS", "subject_kind": "FIELD", "subject_key": "XSD/urn:fixture:1.0/schema/evento_fixture/evtFixture/id", "qualifiers": {}},
+        {"fact_type": "LAYOUT_TYPE", "subject_kind": "EVENT", "subject_key": "S-9999", "qualifiers": {}}
+      ]
+    },
+    {
+      "case_id": "mos-abstained",
+      "source": "MOS",
+      "question": "Qual é o tipo de leiaute segundo o MOS?",
+      "profile": "MOS_EVENT_SECTION",
+      "query": "S-9999",
+      "top_k": 5,
+      "expected_status": "ABSTAINED",
+      "requested_facts": [{"fact_type": "LAYOUT_TYPE", "subject_kind": "EVENT", "subject_key": "S-9999", "qualifiers": {}}]
+    },
+    {
+      "case_id": "layout-abstained",
+      "source": "LAYOUT",
+      "question": "Qual é o maxOccurs XSD segundo o Leiaute?",
+      "profile": "LAYOUT_FIELD",
+      "query": "aliqRat",
+      "top_k": 5,
+      "expected_status": "ABSTAINED",
+      "requested_facts": [{"fact_type": "XSD_MAX_OCCURS", "subject_kind": "FIELD", "subject_key": "XSD/urn:fixture:1.0/schema/evento_fixture/evtFixture/id", "qualifiers": {}}]
+    },
+    {
+      "case_id": "xsd-abstained",
+      "source": "XSD",
+      "question": "Qual é o tipo de leiaute segundo o XSD?",
+      "profile": "XSD_ELEMENT",
+      "query": "TS_Id",
+      "top_k": 5,
+      "expected_status": "ABSTAINED",
+      "requested_facts": [{"fact_type": "LAYOUT_TYPE", "subject_kind": "EVENT", "subject_key": "S-9999", "qualifiers": {}}]
+    }
+  ]
+}

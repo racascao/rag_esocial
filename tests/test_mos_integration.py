@@ -1,4 +1,5 @@
 # ruff: noqa: E501
+import json
 import shutil
 import uuid
 import zipfile
@@ -8,10 +9,19 @@ from pathlib import Path
 from pypdf import PdfWriter
 from pypdf.generic import DictionaryObject, NameObject, StreamObject
 from sqlalchemy import delete, func, select
+from typer.testing import CliRunner
 
+import rag_esocial.cli as cli_module
 import rag_esocial.layout_materializer as layout_materializer_module
 import rag_esocial.mos_materializer as mos_materializer_module
 import rag_esocial.xsd_materializer as xsd_materializer_module
+from rag_esocial.answer_service import (
+    FakeAnswerModelClient,
+    create_answer_request,
+    execute_answer,
+    preflight_answer,
+    validate_answer_contract,
+)
 from rag_esocial.build_service import create_build
 from rag_esocial.corpus import (
     freeze_snapshot,
@@ -30,6 +40,15 @@ from rag_esocial.fact_resolution_service import requested_fact, resolve_requeste
 from rag_esocial.facts_service import build_facts
 from rag_esocial.layout_materializer import materialize_layout
 from rag_esocial.layout_parser import parse_layout_html
+from rag_esocial.models.answer import (
+    AnswerCitation,
+    AnswerClaim,
+    AnswerClaimFact,
+    AnswerRequest,
+    AnswerRequestFactResolution,
+    AnswerRun,
+    AnswerRunStatus,
+)
 from rag_esocial.models.build import (
     CanonicalEntity,
     CitationTarget,
@@ -89,6 +108,11 @@ from rag_esocial.models.xsd import (
 from rag_esocial.mos_materializer import materialize_mos
 from rag_esocial.mos_parser import parse_mos_text
 from rag_esocial.pdf_text import PdfTextExtractor
+from rag_esocial.q14_service import (
+    DeterministicQ14Client,
+    evaluate_q14,
+    validate_q14,
+)
 from rag_esocial.search_service import materialize_projection, search
 from rag_esocial.xsd_materializer import materialize_xsd
 from rag_esocial.xsd_parser import parse_xsd_package
@@ -295,6 +319,12 @@ condition='REGRA_LAYOUT'>Descrição REGRA_LAYOUT e Tabela 05</p>
 
 def cleanup(session, ids):
     for model in [
+        AnswerCitation,
+        AnswerClaimFact,
+        AnswerClaim,
+        AnswerRun,
+        AnswerRequestFactResolution,
+        AnswerRequest,
         FactResolutionSupport,
         FactResolution,
         RequestedFact,
@@ -1539,6 +1569,445 @@ def test_fact_resolution_evaluation_report_is_deterministic(tmp_path):
         assert first == second and one.read_bytes() == two.read_bytes()
         assert first["aggregates"]["RuntimeStatusExactMatch"] == 1
         assert first["aggregates"]["NoRelevantEvidenceRateOnCovered"] == 0.25
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def _answer_fixture(session, snapshot, build):
+    mos_evidence, layout_evidence, _ = _resolution_fixture(session, snapshot, build)
+    resolved_request, _ = requested_fact(
+        session, build, "LAYOUT_TYPE", "EVENT", "S-9999"
+    )
+    resolved, _ = resolve_requested_fact(
+        session, resolved_request, "LAYOUT", layout_evidence
+    )
+    missing_request, _ = requested_fact(
+        session, build, "LAYOUT_SIZE", "EVENT", "S-UNKNOWN"
+    )
+    negative, _ = resolve_requested_fact(
+        session, missing_request, "LAYOUT", mos_evidence
+    )
+    return resolved, negative
+
+
+def _valid_answer(text="O campo possui tipo numérico."):
+    return {
+        "claims": [
+            {
+                "claim_id": "C1",
+                "text": text,
+                "fact_resolution_refs": ["F1"],
+                "evidence_refs": ["E1"],
+            }
+        ]
+    }
+
+
+def test_answer_contract_e2e_postgresql_new_session(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        resolution, _ = _answer_fixture(session, snapshot, build)
+        request, created = create_answer_request(
+            session, build, "LAYOUT", "Qual é o tipo do campo?", [resolution]
+        )
+        client = FakeAnswerModelClient([_valid_answer()])
+        run = execute_answer(session, request, client)
+        session.commit()
+        run_id = run.id
+        request_id = request.id
+        session.close()
+        session = session_factory()()
+        stored = session.get(AnswerRun, run_id)
+        assert created and stored.status == AnswerRunStatus.ANSWERED.value
+        assert stored.rendered_answer.startswith("O campo possui tipo numérico.")
+        assert client.call_count == 1
+        assert count_rows(session, AnswerClaim) == 1
+        assert count_rows(session, AnswerClaimFact) == 1
+        assert count_rows(session, AnswerCitation) == 1
+        same, created_again = create_answer_request(
+            session,
+            session.get(CorpusBuild, build.id),
+            "LAYOUT",
+            "Qual é o tipo do campo?",
+            [session.get(FactResolution, resolution.id)],
+        )
+        assert not created_again and same.id == request_id
+        second = execute_answer(
+            session, same, FakeAnswerModelClient([_valid_answer("Outra formulação.")])
+        )
+        session.commit()
+        assert second.id != run_id and count_rows(session, AnswerRun) == 2
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_answer_abstained_zero_calls_and_partial(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        resolved, negative = _answer_fixture(session, snapshot, build)
+        abstain_request, _ = create_answer_request(
+            session, build, "LAYOUT", "Pergunta sem cobertura", [negative]
+        )
+        abstain_client = FakeAnswerModelClient([])
+        abstained = execute_answer(session, abstain_request, abstain_client)
+        assert abstained.status == AnswerRunStatus.ABSTAINED.value
+        assert abstain_client.call_count == 0
+        partial_request, _ = create_answer_request(
+            session,
+            build,
+            "LAYOUT",
+            "Pergunta parcialmente coberta",
+            [resolved, negative],
+        )
+        partial_client = FakeAnswerModelClient([_valid_answer()])
+        partial = execute_answer(session, partial_request, partial_client)
+        assert partial.status == AnswerRunStatus.PARTIAL.value
+        context = __import__("json").loads(partial_client.contexts[0])
+        assert list(context["facts"]) == ["F1"]
+        assert partial.validation_summary["limitations"]
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_answer_validator_rejects_unauthorized_and_orphan_claims(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        resolved, _ = _answer_fixture(session, snapshot, build)
+        outputs = [
+            {
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "text": "x",
+                        "fact_resolution_refs": ["F9"],
+                        "evidence_refs": ["E1"],
+                    }
+                ]
+            },
+            {
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "text": "x",
+                        "fact_resolution_refs": ["F1"],
+                        "evidence_refs": ["E9"],
+                    }
+                ]
+            },
+            {
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "text": "x",
+                        "fact_resolution_refs": [],
+                        "evidence_refs": ["E1"],
+                    }
+                ]
+            },
+            {
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "text": "x",
+                        "fact_resolution_refs": ["F1"],
+                        "evidence_refs": [],
+                    }
+                ]
+            },
+        ]
+        for index, output in enumerate(outputs):
+            request, _ = create_answer_request(
+                session, build, "LAYOUT", f"Inválida {index}", [resolved]
+            )
+            run = execute_answer(session, request, FakeAnswerModelClient([output]))
+            assert run.status == AnswerRunStatus.VALIDATION_FAILED.value
+            assert run.rendered_answer is None
+        request, _ = create_answer_request(
+            session, build, "LAYOUT", "Cadeia de suporte inválida", [resolved]
+        )
+        _, fact_map, unit_map, _, _ = preflight_answer(session, request)
+        assert validate_answer_contract(_valid_answer(), fact_map, unit_map, set()) == [
+            "SUPPORT_MISMATCH"
+        ]
+        with_extra_field = _valid_answer()
+        with_extra_field["claims"][0]["outside_contract"] = True
+        assert "INVALID_CLAIM_SCHEMA" in validate_answer_contract(
+            with_extra_field,
+            fact_map,
+            unit_map,
+            {(resolved.id, next(iter(unit_map.values())).id)},
+        )
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_answer_structured_output_retry_and_model_error(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        resolved, _ = _answer_fixture(session, snapshot, build)
+        repaired_request, _ = create_answer_request(
+            session, build, "LAYOUT", "Retry válido", [resolved]
+        )
+        repaired = execute_answer(
+            session,
+            repaired_request,
+            FakeAnswerModelClient([{"invalid": True}, _valid_answer()]),
+        )
+        assert repaired.status == AnswerRunStatus.ANSWERED.value
+        assert repaired.attempt_count == 2
+        failed_request, _ = create_answer_request(
+            session, build, "LAYOUT", "Retry inválido", [resolved]
+        )
+        failed = execute_answer(
+            session,
+            failed_request,
+            FakeAnswerModelClient([{"invalid": True}, {"still": "invalid"}]),
+        )
+        assert failed.status == AnswerRunStatus.MODEL_ERROR.value
+        assert failed.attempt_count == 2
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_answer_contract_rollback_postgresql(tmp_path, monkeypatch):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        resolved, _ = _answer_fixture(session, snapshot, build)
+        session.commit()
+        import rag_esocial.answer_service as module
+
+        original = module.AnswerCitation
+
+        class FailingCitation(original):
+            def __init__(self, *args, **kwargs):
+                raise RuntimeError("injected answer persistence failure")
+
+        monkeypatch.setattr(module, "AnswerCitation", FailingCitation)
+        request, _ = create_answer_request(
+            session, build, "LAYOUT", "Rollback", [resolved]
+        )
+        resolved_id = resolved.id
+        try:
+            execute_answer(session, request, FakeAnswerModelClient([_valid_answer()]))
+        except RuntimeError:
+            session.rollback()
+        session.close()
+        session = session_factory()()
+        assert count_rows(session, AnswerRun) == 0
+        assert count_rows(session, AnswerClaim) == 0
+        assert count_rows(session, AnswerClaimFact) == 0
+        assert count_rows(session, AnswerCitation) == 0
+        assert session.get(FactResolution, resolved_id)
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_answer_contract_two_builds_postgresql(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        first_resolution, _ = _answer_fixture(session, snapshot, build)
+        first_request, _ = create_answer_request(
+            session, build, "LAYOUT", "B1/B2", [first_resolution]
+        )
+        first_run = execute_answer(
+            session, first_request, FakeAnswerModelClient([_valid_answer()])
+        )
+        session.commit()
+        build2 = create_build(session, snapshot.slug, "answer-contract-v2", {})
+        ids["builds"].append(build2.id)
+        second_resolution, _ = _answer_fixture(session, snapshot, build2)
+        second_request, _ = create_answer_request(
+            session, build2, "LAYOUT", "B1/B2", [second_resolution]
+        )
+        second_run = execute_answer(
+            session, second_request, FakeAnswerModelClient([_valid_answer()])
+        )
+        session.commit()
+        assert first_request.id != second_request.id
+        assert first_run.id != second_run.id
+        first_citation = session.scalar(
+            select(AnswerCitation)
+            .join(AnswerClaim)
+            .where(AnswerClaim.answer_run_id == first_run.id)
+        )
+        second_citation = session.scalar(
+            select(AnswerCitation)
+            .join(AnswerClaim)
+            .where(AnswerClaim.answer_run_id == second_run.id)
+        )
+        assert (
+            session.get(
+                EvidenceUnit, first_citation.evidence_unit_id
+            ).citation_target_id
+            == session.get(
+                EvidenceUnit, second_citation.evidence_unit_id
+            ).citation_target_id
+        )
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_answer_contract_preserves_upstream_materializations(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        resolved, _ = _answer_fixture(session, snapshot, build)
+        session.flush()
+        before = {
+            "build_digest": build.build_digest,
+            "search_projections": count_rows(session, SearchProjection),
+            "search_units": count_rows(session, SearchUnit),
+            "evidence_sets": count_rows(session, EvidenceSet),
+            "evidence_units": count_rows(session, EvidenceUnit),
+            "fact_resolutions": count_rows(session, FactResolution),
+            "supports": count_rows(session, FactResolutionSupport),
+        }
+        request, _ = create_answer_request(
+            session, build, "LAYOUT", "Imutabilidade upstream", [resolved]
+        )
+        execute_answer(session, request, FakeAnswerModelClient([_valid_answer()]))
+        session.flush()
+        after = {
+            "build_digest": build.build_digest,
+            "search_projections": count_rows(session, SearchProjection),
+            "search_units": count_rows(session, SearchUnit),
+            "evidence_sets": count_rows(session, EvidenceSet),
+            "evidence_units": count_rows(session, EvidenceUnit),
+            "fact_resolutions": count_rows(session, FactResolution),
+            "supports": count_rows(session, FactResolutionSupport),
+        }
+        assert before == after
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_answer_cli_generate_and_show_against_postgresql(tmp_path, monkeypatch):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        resolved, _ = _answer_fixture(session, snapshot, build)
+        session.commit()
+        client = FakeAnswerModelClient([_valid_answer()])
+        monkeypatch.setattr(
+            cli_module, "OllamaAnswerModelClient", lambda **kwargs: client
+        )
+        runner = CliRunner()
+        generated = runner.invoke(
+            cli_module.app,
+            [
+                "answer",
+                "generate",
+                "--build",
+                build.id,
+                "--source",
+                "LAYOUT",
+                "--question",
+                "Qual é o tipo?",
+                "--resolution",
+                resolved.id,
+            ],
+        )
+        assert generated.exit_code == 0, generated.output
+        session.expire_all()
+        run = session.scalar(
+            select(AnswerRun).order_by(AnswerRun.created_at.desc()).limit(1)
+        )
+        assert run.status == AnswerRunStatus.ANSWERED.value
+        shown = runner.invoke(cli_module.app, ["answer", "show", "--run", run.id])
+        assert shown.exit_code == 0, shown.output
+        assert run.id in shown.output
+        assert "O campo possui tipo numérico." in shown.output
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_q14_fake_14_of_14_is_deterministic_and_frozen(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    dataset = Path("evaluation/q14/q14_v1.json")
+    try:
+        _resolution_fixture(session, snapshot, build)
+        session.commit()
+        data, digest = validate_q14(dataset)
+        assert len(data["cases"]) == 14
+        assert (
+            digest == "30dad081fde8b59f448bd8675fdfa298c22c8d2da5dddf9ba7f30e3e8796e3c7"
+        )
+        first = evaluate_q14(
+            session, build, dataset, DeterministicQ14Client, "fake-deterministic"
+        )
+        session.commit()
+        upstream = {
+            "build_digest": build.build_digest,
+            "projections": count_rows(session, SearchProjection),
+            "search_units": count_rows(session, SearchUnit),
+            "evidence_sets": count_rows(session, EvidenceSet),
+            "evidence_units": count_rows(session, EvidenceUnit),
+        }
+        second = evaluate_q14(
+            session, build, dataset, DeterministicQ14Client, "fake-deterministic"
+        )
+        session.commit()
+        assert first == second
+        assert upstream == {
+            "build_digest": build.build_digest,
+            "projections": count_rows(session, SearchProjection),
+            "search_units": count_rows(session, SearchUnit),
+            "evidence_sets": count_rows(session, EvidenceSet),
+            "evidence_units": count_rows(session, EvidenceUnit),
+        }
+        one, two = tmp_path / "q14-one.json", tmp_path / "q14-two.json"
+        write_report(first, one)
+        write_report(second, two)
+        assert one.read_bytes() == two.read_bytes()
+        assert sum(x["observed_status"] == "ANSWERED" for x in first["results"]) == 8, [
+            (x["case_id"], x["expected_status"], x["observed_status"])
+            for x in first["results"]
+        ]
+        assert sum(x["observed_status"] == "PARTIAL" for x in first["results"]) == 3
+        abstained = [x for x in first["results"] if x["observed_status"] == "ABSTAINED"]
+        assert len(abstained) == 3
+        assert all(x["model_call_count"] == 0 for x in abstained)
+        assert first["aggregates"]["AnswerRunSuccessRate"] == 1
+        assert first["aggregates"]["CitationMembershipValidity"] == 1
+        assert first["aggregates_by_family"] == [
+            {"family": "MOS", "case_count": 5, "status_exact_match_rate": 1.0},
+            {"family": "LAYOUT", "case_count": 5, "status_exact_match_rate": 1.0},
+            {"family": "XSD", "case_count": 4, "status_exact_match_rate": 1.0},
+        ]
+        cli_report = tmp_path / "q14-cli.json"
+        cli_result = CliRunner().invoke(
+            cli_module.app,
+            [
+                "eval",
+                "q14",
+                "--build",
+                build.id,
+                "--fake",
+                "--output",
+                str(cli_report),
+            ],
+        )
+        assert cli_result.exit_code == 0, cli_result.output
+        assert (
+            json.loads(cli_report.read_text())["aggregates"]["AnswerRunSuccessRate"]
+            == 1
+        )
     finally:
         cleanup(session, ids)
         session.close()
