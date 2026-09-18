@@ -1,5 +1,3 @@
-Abaixo está uma versão mais profissional, com foco em **posicionamento técnico, diferenciais, arquitetura, rastreabilidade e um tutorial operacional completo**, sem prometer funcionalidades que ainda não existem.
-
 ````markdown
 # RAG eSocial
 
@@ -39,7 +37,7 @@ fact resolution
 generation
     !=
 validation
-````
+```
 
 Um resultado encontrado pela busca não se torna automaticamente evidência.
 
