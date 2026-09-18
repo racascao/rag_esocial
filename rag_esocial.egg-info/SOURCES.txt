@@ -3,6 +3,7 @@ pyproject.toml
 rag_esocial/__init__.py
 rag_esocial/build_service.py
 rag_esocial/cli.py
+rag_esocial/complete_answer_service.py
 rag_esocial/config.py
 rag_esocial/corpus.py
 rag_esocial/db.py
@@ -30,6 +31,7 @@ rag_esocial.egg-info/top_level.txt
 rag_esocial/models/__init__.py
 rag_esocial/models/base.py
 rag_esocial/models/build.py
+rag_esocial/models/complete_answer.py
 rag_esocial/models/corpus.py
 rag_esocial/models/evidence.py
 rag_esocial/models/fact_resolution.py

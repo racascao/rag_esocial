@@ -6,9 +6,11 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
 from pypdf import PdfWriter
 from pypdf.generic import DictionaryObject, NameObject, StreamObject
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from typer.testing import CliRunner
 
 import rag_esocial.cli as cli_module
@@ -23,6 +25,20 @@ from rag_esocial.answer_service import (
     validate_answer_contract,
 )
 from rag_esocial.build_service import create_build
+from rag_esocial.complete_answer_service import (
+    SOURCE_ORDER,
+    CompleteBuildMismatchError,
+    CompleteDuplicateMembershipError,
+    CompleteIdentityError,
+    CompleteMembershipError,
+    CompleteRequestedAspectSpec,
+    CompleteSourceInputSpec,
+    create_complete_answer_request,
+    create_complete_answer_run,
+    inspect_complete_run,
+    mark_complete_run_failed,
+    register_complete_source_run,
+)
 from rag_esocial.corpus import (
     freeze_snapshot,
     inventory_zip,
@@ -54,6 +70,15 @@ from rag_esocial.models.build import (
     CitationTarget,
     CorpusBuild,
     CorpusBuildCitationTarget,
+)
+from rag_esocial.models.complete_answer import (
+    CompleteAnswerRequest,
+    CompleteAnswerRequestedAspect,
+    CompleteAnswerRequestSource,
+    CompleteAnswerRun,
+    CompleteAnswerSourceInput,
+    CompleteAnswerSourceRun,
+    CompleteRunExecutionState,
 )
 from rag_esocial.models.corpus import (
     ArchiveMember,
@@ -319,6 +344,12 @@ condition='REGRA_LAYOUT'>Descrição REGRA_LAYOUT e Tabela 05</p>
 
 def cleanup(session, ids):
     for model in [
+        CompleteAnswerSourceRun,
+        CompleteAnswerRun,
+        CompleteAnswerSourceInput,
+        CompleteAnswerRequestedAspect,
+        CompleteAnswerRequestSource,
+        CompleteAnswerRequest,
         AnswerCitation,
         AnswerClaimFact,
         AnswerClaim,
@@ -2008,6 +2039,530 @@ def test_q14_fake_14_of_14_is_deterministic_and_frozen(tmp_path):
             json.loads(cli_report.read_text())["aggregates"]["AnswerRunSuccessRate"]
             == 1
         )
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def _phase9a_source_fixture(session, snapshot, build, question="Complete fixture"):
+    mos_evidence, layout_evidence, xsd_evidence = _resolution_fixture(
+        session, snapshot, build
+    )
+    definitions = (
+        (
+            "event.concept",
+            "EVENT_CONCEITO",
+            "EVENT",
+            "S-9999",
+            DocumentFamily.MOS.value,
+            "MOS_EVENT_SECTION",
+            "S-9999",
+            mos_evidence,
+        ),
+        (
+            "layout.field-type",
+            "LAYOUT_TYPE",
+            "EVENT",
+            "S-9999",
+            DocumentFamily.LAYOUT.value,
+            "LAYOUT_FIELD",
+            "aliqRat",
+            layout_evidence,
+        ),
+        (
+            "xsd.max-occurs",
+            "XSD_MAX_OCCURS",
+            "FIELD",
+            "XSD/urn:fixture:1.0/schema/evento_fixture/evtFixture/id",
+            DocumentFamily.XSD.value,
+            "XSD_ELEMENT",
+            "TS_Id",
+            xsd_evidence,
+        ),
+    )
+    aspects = []
+    resolutions = {}
+    for (
+        aspect_key,
+        fact_type,
+        subject_kind,
+        subject_key,
+        family,
+        profile,
+        query,
+        evidence,
+    ) in definitions:
+        fact, _ = requested_fact(session, build, fact_type, subject_kind, subject_key)
+        resolution, _ = resolve_requested_fact(session, fact, family, evidence)
+        assert resolution.runtime_status == RuntimeStatus.RESOLVED.value
+        aspects.append(
+            CompleteRequestedAspectSpec(
+                aspect_key=aspect_key,
+                subject_kind=subject_kind,
+                subject_key=subject_key,
+                canonical_entity=(
+                    session.get(CanonicalEntity, fact.canonical_entity_id)
+                    if fact.canonical_entity_id
+                    else None
+                ),
+                source_inputs=(
+                    CompleteSourceInputSpec(
+                        document_family=family,
+                        requested_fact=fact,
+                        retrieval_profile=profile,
+                        query=query,
+                        top_k=5,
+                    ),
+                ),
+            )
+        )
+        resolutions[family] = resolution
+    complete_request, created = create_complete_answer_request(
+        session,
+        build,
+        question,
+        SOURCE_ORDER,
+        tuple(aspects),
+        orchestration_config={"source_run_policy": "ALWAYS_NEW"},
+    )
+    source_requests = {}
+    source_runs = {}
+    for family in SOURCE_ORDER:
+        source_request, _ = create_answer_request(
+            session, build, family, question, [resolutions[family]]
+        )
+        source_requests[family] = source_request
+        source_runs[family] = execute_answer(
+            session,
+            source_request,
+            FakeAnswerModelClient([_valid_answer(f"Resposta {family}.")]),
+        )
+    return complete_request, created, tuple(aspects), source_requests, source_runs
+
+
+def _register_phase9a_sources(session, complete_run, source_requests, source_runs):
+    memberships = {}
+    for family in SOURCE_ORDER:
+        membership, created = register_complete_source_run(
+            session,
+            complete_run,
+            family,
+            source_requests[family],
+            source_runs[family],
+            {"answer_status": source_runs[family].status},
+        )
+        assert created
+        memberships[family] = membership
+    return memberships
+
+
+def test_phase9a_e2e_new_session_idempotency_multiple_runs_and_sources(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        request, created, aspects, source_requests, source_runs = (
+            _phase9a_source_fixture(session, snapshot, build)
+        )
+        same, created_again = create_complete_answer_request(
+            session,
+            build,
+            request.question,
+            tuple(reversed(SOURCE_ORDER)),
+            tuple(reversed(aspects)),
+            orchestration_config={"source_run_policy": "ALWAYS_NEW"},
+        )
+        assert created and not created_again
+        assert same.id == request.id and same.request_digest == request.request_digest
+        changed, changed_created = create_complete_answer_request(
+            session,
+            build,
+            request.question,
+            SOURCE_ORDER,
+            aspects,
+            orchestration_config={"source_run_policy": "ALWAYS_NEW", "revision": 2},
+        )
+        assert changed_created and changed.id != request.id
+
+        first_run = create_complete_answer_run(session, request)
+        memberships = _register_phase9a_sources(
+            session, first_run, source_requests, source_runs
+        )
+        repeated, repeated_created = register_complete_source_run(
+            session,
+            first_run,
+            DocumentFamily.MOS.value,
+            source_requests[DocumentFamily.MOS.value],
+            source_runs[DocumentFamily.MOS.value],
+        )
+        assert not repeated_created and repeated.id == memberships["MOS"].id
+
+        second_source_runs = {
+            family: execute_answer(
+                session,
+                source_requests[family],
+                FakeAnswerModelClient([_valid_answer(f"Segunda {family}.")]),
+            )
+            for family in SOURCE_ORDER
+        }
+        second_run = create_complete_answer_run(session, request)
+        _register_phase9a_sources(
+            session, second_run, source_requests, second_source_runs
+        )
+        assert first_run.id != second_run.id
+        session.commit()
+        first_id, request_id = first_run.id, request.id
+        session.close()
+
+        session = session_factory()()
+        stored = session.get(CompleteAnswerRun, first_id)
+        inspected = inspect_complete_run(session, stored)
+        assert stored.complete_answer_request_id == request_id
+        assert stored.execution_state == CompleteRunExecutionState.RUNNING.value
+        assert [item["document_family"] for item in inspected["sources"]] == list(
+            SOURCE_ORDER
+        )
+        assert all(item["answer_run_id"] for item in inspected["sources"])
+        assert stored.request.id == request_id
+        assert all(
+            item.answer_run.answer_request_id == item.answer_request.id
+            for item in stored.source_runs
+        )
+        assert count_rows(session, CompleteAnswerRequest) == 2
+        assert count_rows(session, CompleteAnswerRun) == 2
+        assert count_rows(session, CompleteAnswerSourceRun) == 6
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_phase9a_source_membership_negative_matrix(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        request, _, aspects, source_requests, source_runs = _phase9a_source_fixture(
+            session, snapshot, build
+        )
+        with pytest.raises(CompleteIdentityError, match="duplicate"):
+            create_complete_answer_request(
+                session,
+                build,
+                "duplicate",
+                ("MOS", "MOS", "XSD"),
+                aspects,
+            )
+        with pytest.raises(CompleteIdentityError, match="requires"):
+            create_complete_answer_request(
+                session,
+                build,
+                "unknown",
+                ("MOS", "LAYOUT", "UNKNOWN"),
+                aspects,
+            )
+
+        run = create_complete_answer_run(session, request)
+        with pytest.raises(CompleteMembershipError, match="unknown"):
+            register_complete_source_run(
+                session,
+                run,
+                "UNKNOWN",
+                source_requests["MOS"],
+                source_runs["MOS"],
+            )
+        with pytest.raises(CompleteMembershipError, match="wrong family"):
+            register_complete_source_run(
+                session,
+                run,
+                "MOS",
+                source_requests["LAYOUT"],
+                source_runs["LAYOUT"],
+            )
+        with pytest.raises(CompleteMembershipError, match="other answer request"):
+            register_complete_source_run(
+                session,
+                run,
+                "MOS",
+                source_requests["MOS"],
+                source_runs["LAYOUT"],
+            )
+        mos_resolution = session.scalar(
+            select(FactResolution)
+            .join(AnswerRequestFactResolution)
+            .where(
+                AnswerRequestFactResolution.answer_request_id
+                == source_requests["MOS"].id
+            )
+        )
+        wrong_request, _ = create_answer_request(
+            session, build, "MOS", "Outra pergunta", [mos_resolution]
+        )
+        wrong_request_run = execute_answer(
+            session,
+            wrong_request,
+            FakeAnswerModelClient([_valid_answer("wrong request")]),
+        )
+        with pytest.raises(CompleteMembershipError, match="wrong question"):
+            register_complete_source_run(
+                session, run, "MOS", wrong_request, wrong_request_run
+            )
+        register_complete_source_run(
+            session,
+            run,
+            "MOS",
+            source_requests["MOS"],
+            source_runs["MOS"],
+        )
+        replacement = execute_answer(
+            session,
+            source_requests["MOS"],
+            FakeAnswerModelClient([_valid_answer("replacement")]),
+        )
+        with pytest.raises(CompleteDuplicateMembershipError, match="already has"):
+            register_complete_source_run(
+                session, run, "MOS", source_requests["MOS"], replacement
+            )
+        another_run = create_complete_answer_run(session, request)
+        with pytest.raises(CompleteDuplicateMembershipError, match="already belongs"):
+            register_complete_source_run(
+                session,
+                another_run,
+                "MOS",
+                source_requests["MOS"],
+                source_runs["MOS"],
+            )
+        failed = mark_complete_run_failed(
+            session, another_run, "TEST_FAILURE", {"stage": "9A"}
+        )
+        assert failed.execution_state == CompleteRunExecutionState.FAILED.value
+        assert failed.status is None and failed.failure_code == "TEST_FAILURE"
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_phase9a_wrong_build_and_b1_b2(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        request1, _, aspects1, requests1, runs1 = _phase9a_source_fixture(
+            session, snapshot, build
+        )
+        run1 = create_complete_answer_run(session, request1)
+        _register_phase9a_sources(session, run1, requests1, runs1)
+        session.commit()
+
+        build2 = create_build(session, snapshot.slug, "complete-answer-b2", {})
+        ids["builds"].append(build2.id)
+        request2, _, _, requests2, runs2 = _phase9a_source_fixture(
+            session, snapshot, build2
+        )
+        run2 = create_complete_answer_run(session, request2)
+        _register_phase9a_sources(session, run2, requests2, runs2)
+        session.commit()
+        assert request1.id != request2.id
+        assert run1.id != run2.id
+        assert {
+            item.id
+            for item in session.scalars(
+                select(CompleteAnswerSourceRun).where(
+                    CompleteAnswerSourceRun.complete_answer_run_id == run1.id
+                )
+            )
+        }.isdisjoint(
+            {
+                item.id
+                for item in session.scalars(
+                    select(CompleteAnswerSourceRun).where(
+                        CompleteAnswerSourceRun.complete_answer_run_id == run2.id
+                    )
+                )
+            }
+        )
+
+        third_run = create_complete_answer_run(session, request1)
+        with pytest.raises(CompleteBuildMismatchError, match="other build"):
+            register_complete_source_run(
+                session, third_run, "MOS", requests2["MOS"], runs2["MOS"]
+            )
+        savepoint = session.begin_nested()
+        now = datetime.now(timezone.utc)
+        session.add(
+            CompleteAnswerRun(
+                id=str(uuid.uuid4()),
+                complete_answer_request_id=request1.id,
+                corpus_build_id=build2.id,
+                run_key=str(uuid.uuid4()),
+                execution_state=CompleteRunExecutionState.RUNNING.value,
+                status=None,
+                context_digest=None,
+                failure_code=None,
+                failure_details=None,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            session.flush()
+        savepoint.rollback()
+        wrong_fact_aspect = CompleteRequestedAspectSpec(
+            aspect_key="wrong-build",
+            subject_kind=aspects1[0].subject_kind,
+            subject_key=aspects1[0].subject_key,
+            source_inputs=(
+                CompleteSourceInputSpec(
+                    document_family="MOS",
+                    requested_fact=session.get(
+                        RequestedFact,
+                        session.scalar(
+                            select(CompleteAnswerSourceInput.requested_fact_id)
+                            .join(CompleteAnswerRequestSource)
+                            .where(
+                                CompleteAnswerRequestSource.complete_answer_request_id
+                                == request2.id,
+                                CompleteAnswerRequestSource.document_family == "MOS",
+                            )
+                        ),
+                    ),
+                    retrieval_profile="MOS_EVENT_SECTION",
+                    query="S-9999",
+                    top_k=5,
+                ),
+            ),
+        )
+        with pytest.raises(CompleteBuildMismatchError, match="requested fact"):
+            create_complete_answer_request(
+                session,
+                build,
+                "wrong build",
+                SOURCE_ORDER,
+                (wrong_fact_aspect,),
+            )
+
+        target1 = session.scalar(
+            select(SourceFact.citation_target_id).where(
+                SourceFact.corpus_build_id == build.id,
+                SourceFact.fact_type == "LAYOUT_TYPE",
+            )
+        )
+        target2 = session.scalar(
+            select(SourceFact.citation_target_id).where(
+                SourceFact.corpus_build_id == build2.id,
+                SourceFact.fact_type == "LAYOUT_TYPE",
+            )
+        )
+        assert target1 == target2
+        assert aspects1[0].canonical_entity.id == session.scalar(
+            select(CanonicalEntity.id).where(
+                CanonicalEntity.stable_key == aspects1[0].canonical_entity.stable_key
+            )
+        )
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_phase9a_rollback_preserves_request_and_phase8_runs(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        request, _, _, source_requests, source_runs = _phase9a_source_fixture(
+            session, snapshot, build
+        )
+        session.commit()
+        request_id = request.id
+        answer_run_ids = {item.id for item in source_runs.values()}
+
+        run = create_complete_answer_run(session, request)
+        memberships = _register_phase9a_sources(
+            session, run, source_requests, source_runs
+        )
+        run_id = run.id
+        mos = memberships["MOS"]
+        session.add(
+            CompleteAnswerSourceRun(
+                id=str(uuid.uuid4()),
+                complete_answer_run_id=run.id,
+                complete_answer_request_id=request.id,
+                request_source_id=mos.request_source_id,
+                answer_request_id=mos.answer_request_id,
+                answer_run_id=mos.answer_run_id,
+                document_family=mos.document_family,
+                source_order=mos.source_order,
+                availability=mos.availability,
+                outcome_summary={},
+                created_at=datetime.now(timezone.utc),
+            )
+        )
+        with pytest.raises(IntegrityError):
+            session.flush()
+        session.rollback()
+        session.close()
+
+        session = session_factory()()
+        assert session.get(CompleteAnswerRequest, request_id)
+        assert session.get(CompleteAnswerRun, run_id) is None
+        assert count_rows(session, CompleteAnswerSourceRun) == 0
+        assert answer_run_ids == {
+            item.id
+            for item in session.scalars(
+                select(AnswerRun).where(AnswerRun.id.in_(answer_run_ids))
+            )
+        }
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_phase9a_preserves_all_upstream_and_q14(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        request, _, _, source_requests, source_runs = _phase9a_source_fixture(
+            session, snapshot, build
+        )
+        session.commit()
+        models = (
+            CorpusSnapshot,
+            CorpusBuild,
+            SearchProjection,
+            SearchUnit,
+            EvidenceSet,
+            EvidenceUnit,
+            SourceFact,
+            ResolvedFact,
+            RequestedFact,
+            FactResolution,
+            FactResolutionSupport,
+            AnswerRequest,
+            AnswerRun,
+            AnswerClaim,
+            AnswerClaimFact,
+            AnswerCitation,
+        )
+        q14_path = Path("evaluation/q14/q14_v1.json")
+        _, q14_digest = validate_q14(q14_path)
+        report_hashes = {
+            path.name: __import__("hashlib").sha256(path.read_bytes()).hexdigest()
+            for path in Path("evaluation/q14").glob("*report.json")
+        }
+        before = {model.__name__: count_rows(session, model) for model in models}
+        before["build_digest"] = build.build_digest
+
+        run = create_complete_answer_run(session, request)
+        _register_phase9a_sources(session, run, source_requests, source_runs)
+        session.commit()
+
+        after = {model.__name__: count_rows(session, model) for model in models}
+        after["build_digest"] = session.get(CorpusBuild, build.id).build_digest
+        assert before == after
+        assert validate_q14(q14_path)[1] == q14_digest
+        assert (
+            q14_digest
+            == "30dad081fde8b59f448bd8675fdfa298c22c8d2da5dddf9ba7f30e3e8796e3c7"
+        )
+        assert report_hashes == {
+            path.name: __import__("hashlib").sha256(path.read_bytes()).hexdigest()
+            for path in Path("evaluation/q14").glob("*report.json")
+        }
     finally:
         cleanup(session, ids)
         session.close()

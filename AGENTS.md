@@ -28,3 +28,6 @@
 - RuntimeStatus é distinto de GoldCoverageState; NO_RELEVANT_EVIDENCE é miss de runtime, não ausência gold.
 - Coverage precheck não pode vazar valor factual; RESOLVED exige suporte autorizado por EvidenceSet.
 - Status negativo nunca vira valor estimado; fact resolution é determinística.
+- Complete Mode é uma extensão aditiva; o Answer Contract v1 permanece single-source.
+- Objetos Complete são build-specific e não podem agregar source runs de outro build.
+- Respostas intermediárias geradas nunca são evidência para a camada Complete.

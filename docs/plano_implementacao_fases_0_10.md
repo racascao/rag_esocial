@@ -16,10 +16,10 @@
 - Fase 6: Evidence Assembly experimental e resolução.
 - Fase 7: síntese restrita por evidência.
 - Fase 8: COMPLETE — Answer Contract single-source, Ollama/`gemma4:12b`, validação determinística e Q14 fake/live 14/14.
-- Fase 9: Complete Mode / síntese cross-source; não iniciada.
+- Fase 9: IN_PROGRESS — 9A COMPLETE com migration `0012_complete_answer`, identidade/persistência build-specific, source/aspect inputs, múltiplos runs, membership validado, rollback, B1/B2 e upstream immutability; 9B NEXT para agregação determinística cross-source. Synthesis continua não implementada.
 - Fase 10: avaliação e operação.
 
 Invariantes são introduzidos na fase em que surgem. NL → RequestedFact, G2, Example/Observation, relações/divergências e referências órfãs permanecem decisões dependentes de evidência e amostragem.
 # Atualização de roadmap
 
-Fase 8 — COMPLETE: claim ledger, citations persistidas, preflight, validator, renderer, CLI, Ollama e Q14 congelado com reports fake/live. Próxima: Fase 9 — Complete Mode / síntese cross-source; não iniciada.
+Fase 9 — IN_PROGRESS. Subfase 9A — COMPLETE: contrato persistente e orquestração determinística do Complete Mode, sem synthesis ou CLI pública. Próxima: 9B — agregação determinística cross-source.
