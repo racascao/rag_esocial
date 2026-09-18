@@ -1,4 +1,4 @@
-````markdown
+
 # RAG eSocial
 
 > Assistente local, auditável e baseado em evidências para consulta à documentação oficial do eSocial.
@@ -1139,10 +1139,3 @@ e não completar a lacuna com conhecimento paramétrico.
 O projeto é uma ferramenta técnica para consulta e análise da documentação carregada em seu corpus.
 
 As respostas produzidas devem ser interpretadas juntamente com suas evidências e citações e não substituem a verificação das fontes oficiais aplicáveis ao caso concreto.
-
-```
-
-Eu faria essa troca integral do README atual. A nova versão comunica muito melhor o valor do projeto porque deixa de parecer apenas um changelog das fases e passa a explicar **por que a arquitetura existe e quais garantias ela oferece**.
-
-Também mantive o tutorial conservador nos comandos em que a sintaxe exata dos argumentos não apareceu no material que você forneceu: nesses casos o README direciona para `--help`, em vez de inventar flags que podem não corresponder à implementação real.
-```
