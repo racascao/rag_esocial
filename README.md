@@ -996,8 +996,16 @@ Fase 9B  COMPLETE
 Fase 9C  COMPLETE
 Fase 9D  COMPLETE
 Fase 9E  COMPLETE
-Fase 10  NEXT
+Fase 10  COMPLETE
 ```
+
+## MVP final — Fase 10 COMPLETE
+
+O fechamento formal do MVP, seus gates reproduzíveis, limitações explícitas e
+manifesto final estão em [`docs/mvp_final_validation.md`](docs/mvp_final_validation.md)
+e [`evaluation/mvp/mvp_v1_manifest.json`](evaluation/mvp/mvp_v1_manifest.json).
+O status não representa certificação jurídica, release de produção ou revisão
+humana concluída; esta permanece `NOT_REVIEWED`. A Fase 11 não foi iniciada.
 
 ## Fase 9B — agregação determinística cross-source
 

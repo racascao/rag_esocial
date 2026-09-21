@@ -80,4 +80,5 @@ registra provider, modelo, runtime e metadados disponíveis, mas o texto live n�
 encaminhados à revisão humana, sem alterar gold, prompt, retrieval ou modelo.
 
 A Fase 9E não cria migration; o head permanece `0014_complete_synthesis`.
-Fase 10 não é implementada nesta etapa.
+O fechamento da Fase 10 e os gates finais do MVP estão em
+[`docs/mvp_final_validation.md`](mvp_final_validation.md).

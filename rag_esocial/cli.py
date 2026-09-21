@@ -78,6 +78,7 @@ from .models.xsd import (
 )
 from .mos_materializer import materialize_mos
 from .mos_parser import parse_mos_text
+from .mvp_validation_service import validate_mvp_artifacts, write_mvp_manifest
 from .pdf_text import PdfTextExtractor
 from .q14_service import DeterministicQ14Client, evaluate_q14, validate_q14
 from .search_service import materialize_projection, search
@@ -1090,3 +1091,17 @@ def eval_complete_review(
         console.print(f"Benchmark Complete inválido: {error}")
         raise typer.Exit(code=1) from error
     console.print_json(json.dumps(template, ensure_ascii=False, sort_keys=True))
+
+
+@eval_app.command("mvp")
+def eval_mvp(
+    output: Path = typer.Option(
+        Path("evaluation/mvp/mvp_v1_manifest.json"), "--output"
+    ),
+) -> None:
+    """Valida artefatos finais do MVP em modo read-only, sem LLM judge."""
+    manifest = validate_mvp_artifacts(Path("."))
+    write_mvp_manifest(manifest, output)
+    console.print_json(json.dumps(manifest, ensure_ascii=False, sort_keys=True))
+    if manifest["status"] != "COMPLETE":
+        raise typer.Exit(code=1)

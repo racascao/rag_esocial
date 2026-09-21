@@ -17,9 +17,9 @@
 - Fase 7: síntese restrita por evidência.
 - Fase 8: COMPLETE — Answer Contract single-source, Ollama/`gemma4:12b`, validação determinística e Q14 fake/live 14/14.
 - Fase 9: COMPLETE — 9A COMPLETE (`0012_complete_answer`), 9B COMPLETE (`0013_cross_source_aggregation`), 9C COMPLETE (`0014_complete_synthesis`), 9D COMPLETE e 9E COMPLETE. A 9E entrega benchmark Complete v1 congelado, métricas estruturais, fake/live reports e template de revisão humana `NOT_REVIEWED`, sem alterar Q14.
-- Fase 10: NEXT — avaliação e operação.
+- Fase 10: COMPLETE — fechamento formal do MVP, gates reproduzíveis, manifestos e documentação final. Não há Fase 11 iniciada.
 
 Invariantes são introduzidos na fase em que surgem. NL → RequestedFact, G2, Example/Observation, relações/divergências e referências órfãs permanecem decisões dependentes de evidência e amostragem.
 # Atualização de roadmap
 
-Fase 9 — COMPLETE. Subfases 9A, 9B, 9C, 9D e 9E — COMPLETE: contrato persistente, agregação factual, synthesis interna cross-source, CLI pública, benchmark congelado e gates automáticos fake/live. Próxima: Fase 10.
+Fases 9 e 10 — COMPLETE. A Fase 10 fecha o MVP com baseline, imutabilidade dos benchmarks, reports fake/live, gates operacionais, manifesto reproduzível e documentação final. Fase 11 não iniciada.

@@ -106,3 +106,4 @@ def test_complete_evaluation_cli_is_exposed() -> None:
     assert result.exit_code == 0
     assert "fake" in result.stdout
     assert runner.invoke(app, ["eval", "complete-review", "--help"]).exit_code == 0
+    assert runner.invoke(app, ["eval", "mvp", "--help"]).exit_code == 0
