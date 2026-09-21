@@ -246,7 +246,9 @@ A agregação factual cross-source da **Fase 9B** está implementada com
 contexto canônico derivado somente de fatos resolvidos e suportes autorizados.
 Não há precedência silenciosa entre fontes.
 
-A synthesis probabilística permanece reservada à **Fase 9C**.
+A synthesis cross-source interna da **Fase 9C** está implementada com contexto
+fechado, validator determinístico, claim ledger e renderer. A CLI Complete pública
+permanece reservada à **Fase 9D**.
 
 ---
 
@@ -991,8 +993,8 @@ Fase 7   COMPLETE
 Fase 8   COMPLETE
 Fase 9A  COMPLETE
 Fase 9B  COMPLETE
-Fase 9C  PLANNED
-Fase 9D  PLANNED
+Fase 9C  COMPLETE
+Fase 9D  NEXT
 Fase 9E  PLANNED
 Fase 10  PLANNED
 ```
@@ -1006,7 +1008,7 @@ CitationTarget`, gera refs source-qualified e persiste comparações com ordem,
 revision e digest determinísticos. `COMPLEMENTARY` e `DIFFERENT_ASPECT` exigem
 relação declarada no plano; divergência fica preservada como metadata.
 
-Ela será responsável por alinhar informações entre:
+A camada 9B alinha informações entre:
 
 ```text
 MOS
@@ -1019,13 +1021,18 @@ subfase.
 
 ---
 
-## Fase 9C
+## Fase 9C — synthesis cross-source controlada por evidência
 
-Reservada para:
+Implementada como API interna, sem CLI pública:
 
 > **cross-source synthesis**
 
-A synthesis continuará sujeita aos mesmos princípios:
+O pipeline recebe somente facts/evidence autorizados pela 9B, preserva
+divergências, não dá precedência a MOS/Layout/XSD, valida refs F/E/X e persiste
+claims finais com links relacionais para `FactResolution`, `EvidenceUnit` e
+`CrossSourceComparison`. Respostas intermediárias nunca são evidence.
+
+A synthesis continua sujeita aos mesmos princípios:
 
 * fatos resolvidos;
 * evidence autorizada;
@@ -1045,7 +1052,7 @@ Atualmente o projeto **não possui**:
 * question decomposition por LLM;
 * query expansion;
 * auto-tuning;
-* synthesis cross-source;
+* CLI Complete pública;
 * aquisição automática de documentos oficiais;
 * frontend;
 * API HTTP;

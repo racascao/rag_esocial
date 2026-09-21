@@ -5,6 +5,7 @@ rag_esocial/build_service.py
 rag_esocial/cli.py
 rag_esocial/complete_answer_service.py
 rag_esocial/cross_source_service.py
+rag_esocial/synthesis_service.py
 rag_esocial/config.py
 rag_esocial/corpus.py
 rag_esocial/db.py

@@ -9,8 +9,8 @@ revision, digests e vínculos ao mesmo run, source input e `FactResolution`.
 Idempotência, nova session, rollback, B1/B2, wrong-build e upstream
 immutability estão cobertos em PostgreSQL.
 
-Claims finais, synthesis, renderer final, benchmark e CLI Complete permanecem
-reservados à 9C/9D.
+Claims finais, synthesis e renderer interno foram implementados na 9C pela
+`0014_complete_synthesis`; benchmark e CLI Complete permanecem reservados à 9D/9E.
 
 ## Resultado arquitetural
 
@@ -414,10 +414,10 @@ flowchart TB
 Não se persiste novo `SourceFact`, `ResolvedFact`, `EntityRelation` ou
 `FactResolution` derivado pelo synthesizer.
 
-## Plano das migrations `0012_complete_answer` e `0013_cross_source_aggregation`
+## Plano das migrations `0012_complete_answer`, `0013_cross_source_aggregation` e `0014_complete_synthesis`
 
 Somente tabelas novas. Os itens 1–6 foram implementados na 9A e os itens 7–8
-na 9B; os itens 9–12 permanecem reservados à 9C:
+na 9B; os itens 9–12 foram implementados na 9C:
 
 1. `complete_answer_requests` — build FK, question/digest, revisions, synthesis
    model/config/digests, request digest, timestamps; unique `(build_id,
@@ -785,5 +785,5 @@ Codex não cria commit, push ou tag.
 Com esta arquitetura, `esocial answer generate/show`, Q14 v1, Answer Contract v1,
 `AnswerRunStatus` e migration 0011 continuam sem mudança. A extensão não cria
 hierarquia de autoridade documental, não escreve no fact graph e não mistura builds.
-Sua persistência/orquestração 9A e a agregação determinística 9B estão
-implementadas; synthesis 9C permanece não iniciada.
+Sua persistência/orquestração 9A, agregação determinística 9B e synthesis interna
+9C estão implementadas; CLI/recovery/observabilidade 9D permanecem não iniciadas.

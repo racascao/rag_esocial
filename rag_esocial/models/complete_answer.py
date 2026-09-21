@@ -30,6 +30,14 @@ class CompleteRunExecutionState(StrEnum):
     FAILED = "FAILED"
 
 
+class CompleteAnswerStatus(StrEnum):
+    ANSWERED = "ANSWERED"
+    PARTIAL = "PARTIAL"
+    ABSTAINED = "ABSTAINED"
+    MODEL_ERROR = "MODEL_ERROR"
+    VALIDATION_FAILED = "VALIDATION_FAILED"
+
+
 class CompleteSourceAvailability(StrEnum):
     AVAILABLE = "AVAILABLE"
     ARTIFACT_ROLE_UNAVAILABLE = "ARTIFACT_ROLE_UNAVAILABLE"
@@ -218,6 +226,18 @@ class CompleteAnswerRun(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
+    synthesis_provider: Mapped[str | None] = mapped_column(String(50))
+    synthesis_model_id: Mapped[str | None] = mapped_column(String(100))
+    synthesis_model_config: Mapped[dict | None] = mapped_column(JSON)
+    synthesis_model_config_digest: Mapped[str | None] = mapped_column(String(64))
+    synthesis_contract_revision: Mapped[str | None] = mapped_column(String(100))
+    synthesis_prompt_revision: Mapped[str | None] = mapped_column(String(100))
+    synthesis_prompt_digest: Mapped[str | None] = mapped_column(String(64))
+    synthesis_attempt_count: Mapped[int | None] = mapped_column(Integer)
+    synthesis_provider_metadata: Mapped[dict | None] = mapped_column(JSON)
+    synthesis_raw_response: Mapped[dict | str | None] = mapped_column(JSON)
+    synthesis_rendered_answer: Mapped[str | None] = mapped_column(Text)
+    synthesis_validation_summary: Mapped[dict | None] = mapped_column(JSON)
 
     request: Mapped[CompleteAnswerRequest] = relationship(back_populates="runs")
     build: Mapped["CorpusBuild"] = relationship(overlaps="request,runs")
@@ -304,4 +324,59 @@ class CompleteAnswerSourceRun(Base):
         ),
         Index("ix_complete_answer_source_runs_complete", "complete_answer_run_id"),
         Index("ix_complete_answer_source_runs_answer_request", "answer_request_id"),
+    )
+
+
+class CompleteAnswerClaim(Base):
+    __tablename__ = "complete_answer_claims"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    complete_answer_run_id: Mapped[str] = mapped_column(
+        ForeignKey("complete_answer_runs.id"), nullable=False
+    )
+    claim_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    claim_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    text_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    validation_state: Mapped[str] = mapped_column(String(30), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("complete_answer_run_id", "claim_key"),
+        UniqueConstraint("complete_answer_run_id", "claim_order"),
+        Index("ix_complete_answer_claims_run", "complete_answer_run_id"),
+    )
+
+
+class CompleteAnswerClaimFact(Base):
+    __tablename__ = "complete_answer_claim_facts"
+
+    complete_answer_claim_id: Mapped[str] = mapped_column(
+        ForeignKey("complete_answer_claims.id"), primary_key=True
+    )
+    fact_resolution_id: Mapped[str] = mapped_column(
+        ForeignKey("fact_resolutions.id"), primary_key=True
+    )
+
+
+class CompleteAnswerCitation(Base):
+    __tablename__ = "complete_answer_citations"
+
+    complete_answer_claim_id: Mapped[str] = mapped_column(
+        ForeignKey("complete_answer_claims.id"), primary_key=True
+    )
+    evidence_unit_id: Mapped[str] = mapped_column(
+        ForeignKey("evidence_units.id"), primary_key=True
+    )
+    citation_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    __table_args__ = (UniqueConstraint("complete_answer_claim_id", "citation_order"),)
+
+
+class CompleteAnswerClaimComparison(Base):
+    __tablename__ = "complete_answer_claim_comparisons"
+
+    complete_answer_claim_id: Mapped[str] = mapped_column(
+        ForeignKey("complete_answer_claims.id"), primary_key=True
+    )
+    comparison_id: Mapped[str] = mapped_column(
+        ForeignKey("cross_source_comparisons.id"), primary_key=True
     )

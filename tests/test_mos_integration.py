@@ -77,6 +77,10 @@ from rag_esocial.models.build import (
     CorpusBuildCitationTarget,
 )
 from rag_esocial.models.complete_answer import (
+    CompleteAnswerCitation,
+    CompleteAnswerClaim,
+    CompleteAnswerClaimComparison,
+    CompleteAnswerClaimFact,
     CompleteAnswerRequest,
     CompleteAnswerRequestedAspect,
     CompleteAnswerRequestSource,
@@ -148,6 +152,12 @@ from rag_esocial.q14_service import (
     validate_q14,
 )
 from rag_esocial.search_service import materialize_projection, search
+from rag_esocial.synthesis_service import (
+    SYNTHESIS_CONTRACT_REVISION,
+    build_synthesis_context,
+    execute_complete_synthesis,
+    validate_synthesis_output,
+)
 from rag_esocial.xsd_materializer import materialize_xsd
 from rag_esocial.xsd_parser import parse_xsd_package
 
@@ -353,6 +363,10 @@ condition='REGRA_LAYOUT'>Descrição REGRA_LAYOUT e Tabela 05</p>
 
 def cleanup(session, ids):
     for model in [
+        CompleteAnswerClaimComparison,
+        CompleteAnswerCitation,
+        CompleteAnswerClaimFact,
+        CompleteAnswerClaim,
         CrossSourceComparisonMember,
         CrossSourceComparison,
         CompleteAnswerSourceRun,
@@ -2658,6 +2672,272 @@ def test_phase9b_support_chain_failure_and_rollback_are_local(tmp_path):
         assert session.scalars(select(CrossSourceComparison)).all() == []
         assert session.scalars(select(CrossSourceComparisonMember)).all() == []
         assert session.get(AnswerRun, source_runs["MOS"].id) is not None
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_phase9c_three_source_synthesis_context_claim_ledger_and_reload(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        request, _, _, source_requests, source_runs = _phase9a_source_fixture(
+            session, snapshot, build
+        )
+        run = create_complete_answer_run(session, request)
+        _register_phase9a_sources(session, run, source_requests, source_runs)
+        session.commit()
+        context = build_synthesis_context(session, run)
+        assert context.payload["revision"] == SYNTHESIS_CONTRACT_REVISION
+        assert {item["ref"] for item in context.payload["facts"]} == {
+            "MOS:F1",
+            "LAYOUT:F1",
+            "XSD:F1",
+        }
+        assert "rendered_answer" not in context.payload
+        assert "AnswerClaim" not in context.serialize()
+        output = {
+            "claims": [
+                {
+                    "claim_id": "C1",
+                    "text": "Achado consolidado pelas fontes autorizadas.",
+                    "fact_refs": ["MOS:F1", "LAYOUT:F1", "XSD:F1"],
+                    "evidence_refs": ["MOS:E1", "LAYOUT:E1", "XSD:E1"],
+                    "comparison_refs": ["X1", "X2", "X3"],
+                }
+            ]
+        }
+        assert validate_synthesis_output(output, context) == []
+        client = FakeAnswerModelClient([output])
+        result = execute_complete_synthesis(session, run, client)
+        session.commit()
+        assert result.status == "ANSWERED"
+        assert result.execution_state == "FINALIZED"
+        assert client.call_count == 1
+        assert result.synthesis_attempt_count == 1
+        assert count_rows(session, CompleteAnswerClaim) == 1
+        assert count_rows(session, CompleteAnswerClaimFact) == 3
+        assert count_rows(session, CompleteAnswerCitation) == 3
+        assert count_rows(session, CompleteAnswerClaimComparison) == 3
+        assert result.synthesis_rendered_answer
+
+        session.close()
+        session = session_factory()()
+        reloaded = session.get(CompleteAnswerRun, run.id)
+        assert reloaded.status == "ANSWERED"
+        assert (
+            session.scalars(
+                select(CompleteAnswerClaim).where(
+                    CompleteAnswerClaim.complete_answer_run_id == run.id
+                )
+            )
+            .one()
+            .claim_key
+            == "C1"
+        )
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_phase9c_retry_validation_failure_and_no_fact_zero_call(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        request, _, _, source_requests, source_runs = _phase9a_source_fixture(
+            session, snapshot, build
+        )
+        run = create_complete_answer_run(session, request)
+        _register_phase9a_sources(session, run, source_requests, source_runs)
+        session.commit()
+        assert build_synthesis_context(session, run).aggregation_digest
+        good = {
+            "claims": [
+                {
+                    "claim_id": "C1",
+                    "text": "Fato autorizado.",
+                    "fact_refs": ["MOS:F1", "LAYOUT:F1"],
+                    "evidence_refs": ["MOS:E1", "LAYOUT:E1"],
+                    "comparison_refs": ["X1", "X2"],
+                }
+            ]
+        }
+        retry_client = FakeAnswerModelClient([{"bad": True}, good])
+        result = execute_complete_synthesis(session, run, retry_client)
+        session.commit()
+        assert result.status == "ANSWERED"
+        assert retry_client.call_count == 2
+        assert result.synthesis_attempt_count == 2
+
+        for resolution in session.scalars(select(FactResolution)).all():
+            resolution.runtime_status = RuntimeStatus.UNSUPPORTED.value
+            resolution.resolved_value = None
+        session.commit()
+        no_source_runs = {
+            family: execute_answer(
+                session,
+                source_requests[family],
+                FakeAnswerModelClient([]),
+            )
+            for family in SOURCE_ORDER
+        }
+        no_fact_run = create_complete_answer_run(session, request)
+        _register_phase9a_sources(session, no_fact_run, source_requests, no_source_runs)
+        session.commit()
+        no_call_client = FakeAnswerModelClient([RuntimeError("must not call")])
+        result = execute_complete_synthesis(session, no_fact_run, no_call_client)
+        session.commit()
+        assert result.status == "ABSTAINED"
+        assert result.synthesis_attempt_count == 0
+        assert no_call_client.call_count == 0
+        assert count_rows(session, CompleteAnswerClaim) == 1
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_phase9c_validator_rejects_closed_world_and_support_violations(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        request, _, _, source_requests, source_runs = _phase9a_source_fixture(
+            session, snapshot, build
+        )
+        run = create_complete_answer_run(session, request)
+        _register_phase9a_sources(session, run, source_requests, source_runs)
+        session.commit()
+        context = build_synthesis_context(session, run)
+        base = {
+            "claim_id": "C1",
+            "text": "Claim.",
+            "fact_refs": ["MOS:F1"],
+            "evidence_refs": ["MOS:E1"],
+            "comparison_refs": [],
+        }
+        cases = (
+            ({**base, "fact_refs": ["MOS:F9"]}, "UNAUTHORIZED_FACT_REFERENCE"),
+            ({**base, "evidence_refs": ["MOS:E9"]}, "UNAUTHORIZED_EVIDENCE_REFERENCE"),
+            ({**base, "comparison_refs": ["X9"]}, "UNAUTHORIZED_COMPARISON_REFERENCE"),
+            ({**base, "fact_refs": ["BAD:F1"]}, "UNAUTHORIZED_FACT_REFERENCE"),
+            ({**base, "evidence_refs": ["LAYOUT:E1"]}, "SUPPORT_MISMATCH"),
+            ({**base, "comparison_refs": ["X2"]}, "COMPARISON_MEMBER_MISMATCH"),
+            (
+                {
+                    **base,
+                    "fact_refs": ["MOS:F1", "LAYOUT:F1"],
+                    "evidence_refs": ["MOS:E1", "LAYOUT:E1"],
+                },
+                "MISSING_COMPARISON_REFERENCE",
+            ),
+            ({**base, "fact_refs": []}, "CLAIM_WITHOUT_FACT_REFS"),
+            ({**base, "evidence_refs": []}, "CLAIM_WITHOUT_EVIDENCE_REFS"),
+        )
+        for claim, expected in cases:
+            assert expected in validate_synthesis_output({"claims": [claim]}, context)
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_phase9c_source_failure_is_limitation_and_single_source_skips_synthesis(
+    tmp_path,
+):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        request, _, _, source_requests, source_runs = _phase9a_source_fixture(
+            session, snapshot, build
+        )
+        source_runs["MOS"].status = "MODEL_ERROR"
+        run = create_complete_answer_run(session, request)
+        _register_phase9a_sources(session, run, source_requests, source_runs)
+        session.commit()
+        output = {
+            "claims": [
+                {
+                    "claim_id": "C1",
+                    "text": "Fatos autorizados.",
+                    "fact_refs": ["MOS:F1", "LAYOUT:F1", "XSD:F1"],
+                    "evidence_refs": ["MOS:E1", "LAYOUT:E1", "XSD:E1"],
+                    "comparison_refs": ["X1", "X2", "X3"],
+                }
+            ]
+        }
+        client = FakeAnswerModelClient([output])
+        result = execute_complete_synthesis(session, run, client)
+        session.commit()
+        assert result.status == "PARTIAL"
+        assert client.call_count == 1
+        assert any(
+            item["kind"] == "MODEL_ERROR"
+            for item in result.synthesis_validation_summary["limitations"]
+        )
+
+        for resolution in session.scalars(select(FactResolution)).all():
+            if resolution.document_family != DocumentFamily.MOS.value:
+                resolution.runtime_status = RuntimeStatus.ASPECT_NOT_COVERED.value
+                resolution.resolved_value = None
+        session.commit()
+        single_source_runs = {
+            family: execute_answer(
+                session,
+                source_requests[family],
+                FakeAnswerModelClient(
+                    [_valid_answer("Resposta MOS.")]
+                    if family == DocumentFamily.MOS.value
+                    else []
+                ),
+            )
+            for family in SOURCE_ORDER
+        }
+        single = create_complete_answer_run(session, request)
+        _register_phase9a_sources(session, single, source_requests, single_source_runs)
+        session.commit()
+        no_synthesis = FakeAnswerModelClient([RuntimeError("must not call")])
+        result = execute_complete_synthesis(session, single, no_synthesis)
+        session.commit()
+        assert no_synthesis.call_count == 0
+        assert result.status == "PARTIAL"
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_phase9c_rollback_keeps_9b_and_removes_final_ledger(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        request, _, _, source_requests, source_runs = _phase9a_source_fixture(
+            session, snapshot, build
+        )
+        run = create_complete_answer_run(session, request)
+        run_id = run.id
+        _register_phase9a_sources(session, run, source_requests, source_runs)
+        session.commit()
+        aggregate_cross_source(session, run)
+        session.commit()
+        comparisons_before = count_rows(session, CrossSourceComparison)
+        output = {
+            "claims": [
+                {
+                    "claim_id": "C1",
+                    "text": "Claim válida.",
+                    "fact_refs": ["MOS:F1", "LAYOUT:F1"],
+                    "evidence_refs": ["MOS:E1", "LAYOUT:E1"],
+                    "comparison_refs": ["X1", "X2"],
+                }
+            ]
+        }
+        execute_complete_synthesis(session, run, FakeAnswerModelClient([output]))
+        session.rollback()
+        session.close()
+        session = session_factory()()
+        assert count_rows(session, CompleteAnswerClaim) == 0
+        assert count_rows(session, CompleteAnswerClaimFact) == 0
+        assert count_rows(session, CompleteAnswerCitation) == 0
+        assert count_rows(session, CompleteAnswerClaimComparison) == 0
+        assert count_rows(session, CrossSourceComparison) == comparisons_before
+        assert session.get(CompleteAnswerRun, run_id).status is None
     finally:
         cleanup(session, ids)
         session.close()
