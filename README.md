@@ -241,7 +241,10 @@ A subfase 9A já implementa:
 * rollback;
 * B1/B2.
 
-A agregação factual cross-source começa na **Fase 9B**.
+A agregação factual cross-source da **Fase 9B** está implementada com
+`CrossSourceComparison`/`CrossSourceComparisonMember`, refs `MOS:F*`/`E*` e
+contexto canônico derivado somente de fatos resolvidos e suportes autorizados.
+Não há precedência silenciosa entre fontes.
 
 A synthesis probabilística permanece reservada à **Fase 9C**.
 
@@ -326,7 +329,9 @@ CompleteAnswerRequest
 
 A 9A implementa essa infraestrutura de orquestração.
 
-A agregação determinística será implementada na 9B.
+A 9B agrega deterministicamente facts/evidence por aspecto, preserva cobertura
+negativa e divergência, e persiste as comparisons no mesmo `CompleteAnswerRun`.
+Synthesis continua fora do escopo.
 
 ---
 
@@ -458,7 +463,7 @@ docker compose exec app uv run alembic heads
 O head atual do projeto é:
 
 ```text
-0012_complete_answer
+0013_cross_source_aggregation
 ```
 
 ---
@@ -770,7 +775,7 @@ docker compose exec app uv run alembic current
 Esperado:
 
 ```text
-0012_complete_answer
+0013_cross_source_aggregation
 ```
 
 ---
@@ -985,18 +990,21 @@ Fase 6   COMPLETE
 Fase 7   COMPLETE
 Fase 8   COMPLETE
 Fase 9A  COMPLETE
-Fase 9B  NEXT
+Fase 9B  COMPLETE
 Fase 9C  PLANNED
 Fase 9D  PLANNED
 Fase 9E  PLANNED
 Fase 10  PLANNED
 ```
 
-## Próxima etapa — Fase 9B
+## Fase 9B — agregação determinística cross-source
 
-A próxima subfase implementará:
-
-> **agregação determinística cross-source**
+Implementada sem LLM, embeddings, fuzzy matching ou conversão semântica implícita.
+O agregador alinha apenas `RequestedAspect`/`RequestedFact` compatíveis no mesmo
+build, valida a cadeia `FactResolution → EvidenceSet → EvidenceUnit →
+CitationTarget`, gera refs source-qualified e persiste comparações com ordem,
+revision e digest determinísticos. `COMPLEMENTARY` e `DIFFERENT_ASPECT` exigem
+relação declarada no plano; divergência fica preservada como metadata.
 
 Ela será responsável por alinhar informações entre:
 
@@ -1006,7 +1014,8 @@ Layout
 XSD
 ```
 
-sem usar LLM para decidir fatos.
+sem usar LLM para decidir fatos. Não existe comando CLI público de Complete nesta
+subfase.
 
 ---
 

@@ -2,15 +2,15 @@
 
 ## Estado de implementação
 
-A arquitetura foi aprovada e a subfase 9A está implementada. A migration
-`0012_complete_answer` materializa somente as seis entidades de persistência e
-orquestração: request, source plan, requested aspect, source input, run e source
-run. Idempotência, múltiplos runs, membership, wrong-build, rollback, nova session,
-B1/B2 e upstream immutability estão cobertos em PostgreSQL.
+A arquitetura foi aprovada. A subfase 9A está implementada pela migration
+`0012_complete_answer` e a 9B pela `0013_cross_source_aggregation`. A 9B
+materializa `CrossSourceComparison` e `CrossSourceComparisonMember` com ordem,
+revision, digests e vínculos ao mesmo run, source input e `FactResolution`.
+Idempotência, nova session, rollback, B1/B2, wrong-build e upstream
+immutability estão cobertos em PostgreSQL.
 
-As estruturas de comparison e claims finais listadas neste documento continuam
-propostas para 9B/9C. Não há agregação cross-source, synthesis, renderer final,
-benchmark ou CLI Complete implementados na 9A.
+Claims finais, synthesis, renderer final, benchmark e CLI Complete permanecem
+reservados à 9C/9D.
 
 ## Resultado arquitetural
 
@@ -414,10 +414,10 @@ flowchart TB
 Não se persiste novo `SourceFact`, `ResolvedFact`, `EntityRelation` ou
 `FactResolution` derivado pelo synthesizer.
 
-## Plano conceitual da migration `0012_complete_answer`
+## Plano das migrations `0012_complete_answer` e `0013_cross_source_aggregation`
 
-Somente tabelas novas. Os itens 1–6 foram implementados na 9A; os itens 7–12
-permanecem reservados às subfases indicadas:
+Somente tabelas novas. Os itens 1–6 foram implementados na 9A e os itens 7–8
+na 9B; os itens 9–12 permanecem reservados à 9C:
 
 1. `complete_answer_requests` — build FK, question/digest, revisions, synthesis
    model/config/digests, request digest, timestamps; unique `(build_id,
@@ -763,7 +763,7 @@ Codex não cria commit, push ou tag.
 
 ### C. Recomendações para aprovação
 
-- agregador aditivo e tabelas propostas em `0012`;
+- agregador aditivo e tabelas 9B em `0013_cross_source_aggregation`;
 - RequestedAspect explícito no input;
 - novos source runs por Complete run;
 - facts/evidence/comparisons como único contexto factual de synthesis;
@@ -785,5 +785,5 @@ Codex não cria commit, push ou tag.
 Com esta arquitetura, `esocial answer generate/show`, Q14 v1, Answer Contract v1,
 `AnswerRunStatus` e migration 0011 continuam sem mudança. A extensão não cria
 hierarquia de autoridade documental, não escreve no fact graph e não mistura builds.
-Sua persistência/orquestração 9A está implementada; agregação 9B e synthesis 9C
-permanecem não iniciadas.
+Sua persistência/orquestração 9A e a agregação determinística 9B estão
+implementadas; synthesis 9C permanece não iniciada.

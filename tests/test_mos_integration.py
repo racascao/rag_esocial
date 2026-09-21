@@ -45,6 +45,11 @@ from rag_esocial.corpus import (
     storage_root,
     verify_snapshot,
 )
+from rag_esocial.cross_source_service import (
+    CrossSourceSupportError,
+    aggregate_cross_source,
+    serialize_cross_source_context,
+)
 from rag_esocial.db import session_factory
 from rag_esocial.evaluation_service import (
     evaluate_fact_resolution_status,
@@ -88,6 +93,10 @@ from rag_esocial.models.corpus import (
     DocumentFamily,
     DocumentVersion,
     SnapshotMember,
+)
+from rag_esocial.models.cross_source import (
+    CrossSourceComparison,
+    CrossSourceComparisonMember,
 )
 from rag_esocial.models.evidence import EvidenceSet, EvidenceSetItem, EvidenceUnit
 from rag_esocial.models.fact_resolution import (
@@ -344,6 +353,8 @@ condition='REGRA_LAYOUT'>Descrição REGRA_LAYOUT e Tabela 05</p>
 
 def cleanup(session, ids):
     for model in [
+        CrossSourceComparisonMember,
+        CrossSourceComparison,
         CompleteAnswerSourceRun,
         CompleteAnswerRun,
         CompleteAnswerSourceInput,
@@ -2563,6 +2574,90 @@ def test_phase9a_preserves_all_upstream_and_q14(tmp_path):
             path.name: __import__("hashlib").sha256(path.read_bytes()).hexdigest()
             for path in Path("evaluation/q14").glob("*report.json")
         }
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_phase9b_aggregation_is_deterministic_new_session_and_source_qualified(
+    tmp_path,
+):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        request, _, aspects, source_requests, source_runs = _phase9a_source_fixture(
+            session, snapshot, build
+        )
+        run = create_complete_answer_run(session, request)
+        _register_phase9a_sources(session, run, source_requests, source_runs)
+        session.commit()
+
+        first, first_digest = aggregate_cross_source(session, run)
+        session.commit()
+        assert first_digest == run.context_digest
+        assert [item["ref"] for item in first["facts"]] == [
+            "MOS:F1",
+            "LAYOUT:F1",
+            "XSD:F1",
+        ]
+        assert [item["ref"] for item in first["evidence"]] == [
+            "MOS:E1",
+            "LAYOUT:E1",
+            "XSD:E1",
+        ]
+        assert all(
+            item["status"] == "SOURCE_NOT_APPLICABLE"
+            for coverage in first["coverage"]
+            for item in coverage["sources"]
+            if item["source"]
+            != next(
+                aspect.source_inputs[0].document_family
+                for aspect in aspects
+                if aspect.aspect_key == coverage["aspect_key"]
+            )
+        )
+        assert [item["kind"] for item in first["comparisons"]] == [
+            "SINGLE_SOURCE",
+            "SINGLE_SOURCE",
+            "SINGLE_SOURCE",
+        ]
+        serialized = serialize_cross_source_context(first)
+        assert "complete_answer_run_id" not in serialized
+        assert "answer_run_id" not in serialized
+        assert len(session.scalars(select(CrossSourceComparison)).all()) == 3
+        assert len(session.scalars(select(CrossSourceComparisonMember)).all()) == 3
+
+        session.close()
+        session = session_factory()()
+        persisted_run = session.get(CompleteAnswerRun, run.id)
+        second, second_digest = aggregate_cross_source(session, persisted_run)
+        assert second == first
+        assert second_digest == first_digest
+        assert serialize_cross_source_context(second) == serialized
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_phase9b_support_chain_failure_and_rollback_are_local(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    try:
+        request, _, _, source_requests, source_runs = _phase9a_source_fixture(
+            session, snapshot, build
+        )
+        run = create_complete_answer_run(session, request)
+        _register_phase9a_sources(session, run, source_requests, source_runs)
+        session.commit()
+        support = session.scalar(select(FactResolutionSupport))
+        session.delete(support)
+        session.commit()
+        with pytest.raises(CrossSourceSupportError):
+            aggregate_cross_source(session, run)
+        session.rollback()
+        assert session.scalars(select(CrossSourceComparison)).all() == []
+        assert session.scalars(select(CrossSourceComparisonMember)).all() == []
+        assert session.get(AnswerRun, source_runs["MOS"].id) is not None
     finally:
         cleanup(session, ids)
         session.close()
