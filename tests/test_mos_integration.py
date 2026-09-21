@@ -39,6 +39,11 @@ from rag_esocial.complete_answer_service import (
     mark_complete_run_failed,
     register_complete_source_run,
 )
+from rag_esocial.complete_application_service import (
+    complete_show_payload,
+    execute_complete,
+)
+from rag_esocial.config import get_settings
 from rag_esocial.corpus import (
     freeze_snapshot,
     inventory_zip,
@@ -2938,6 +2943,219 @@ def test_phase9c_rollback_keeps_9b_and_removes_final_ledger(tmp_path):
         assert count_rows(session, CompleteAnswerClaimComparison) == 0
         assert count_rows(session, CrossSourceComparison) == comparisons_before
         assert session.get(CompleteAnswerRun, run_id).status is None
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_phase9d_application_e2e_new_session_idempotency_and_read_only_show(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    source_clients = {}
+
+    class FakeSynthesisClient:
+        model = "fake-synthesis"
+
+        def __init__(self):
+            self.call_count = 0
+
+        def generate(self, prompt):
+            self.call_count += 1
+            context = json.loads(prompt)["context"]
+            facts = context["facts"]
+            evidence = context["evidence"]
+            comparisons = context["comparisons"]
+            return {
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "text": "Síntese Complete determinística.",
+                        "fact_refs": [item["ref"] for item in facts],
+                        "evidence_refs": [item["ref"] for item in evidence],
+                        "comparison_refs": [item["ref"] for item in comparisons],
+                    }
+                ]
+            }
+
+    synthesis_clients = []
+
+    def source_factory(family):
+        client = FakeAnswerModelClient([_valid_answer(f"Resposta {family}.")])
+        source_clients[family] = client
+        return client
+
+    def synthesis_factory():
+        client = FakeSynthesisClient()
+        synthesis_clients.append(client)
+        return client
+
+    try:
+        _phase9a_source_fixture(session, snapshot, build)
+        facts = {
+            item.fact_type: item
+            for item in session.scalars(
+                select(RequestedFact).where(RequestedFact.corpus_build_id == build.id)
+            )
+        }
+        data = {
+            "question": "Como o mesmo aspecto é representado nas fontes?",
+            "aspects": [
+                {
+                    "aspect_key": "event.concept",
+                    "subject_kind": facts["EVENT_CONCEITO"].subject_kind,
+                    "subject_key": facts["EVENT_CONCEITO"].subject_key,
+                    "source_inputs": [
+                        {
+                            "source": "MOS",
+                            "requested_fact_id": facts["EVENT_CONCEITO"].id,
+                            "profile": "MOS_EVENT_SECTION",
+                            "query": "S-9999",
+                        }
+                    ],
+                },
+                {
+                    "aspect_key": "layout.field-type",
+                    "subject_kind": facts["LAYOUT_TYPE"].subject_kind,
+                    "subject_key": facts["LAYOUT_TYPE"].subject_key,
+                    "source_inputs": [
+                        {
+                            "source": "LAYOUT",
+                            "requested_fact_id": facts["LAYOUT_TYPE"].id,
+                            "profile": "LAYOUT_FIELD",
+                            "query": "aliqRat",
+                        }
+                    ],
+                },
+                {
+                    "aspect_key": "xsd.max-occurs",
+                    "subject_kind": facts["XSD_MAX_OCCURS"].subject_kind,
+                    "subject_key": facts["XSD_MAX_OCCURS"].subject_key,
+                    "source_inputs": [
+                        {
+                            "source": "XSD",
+                            "requested_fact_id": facts["XSD_MAX_OCCURS"].id,
+                            "profile": "XSD_ELEMENT",
+                            "query": "TS_Id",
+                        }
+                    ],
+                },
+            ],
+        }
+        first = execute_complete(
+            session,
+            build,
+            data,
+            get_settings(),
+            source_client_factory=source_factory,
+            synthesis_client_factory=synthesis_factory,
+        )
+        first_key = first.run.run_key
+        assert first.payload["status"] == "ANSWERED"
+        assert first.payload["claims"][0]["comparison_refs"]
+        assert sum(client.call_count for client in source_clients.values()) == 3
+        assert synthesis_clients[-1].call_count == 1
+
+        second = execute_complete(
+            session,
+            build,
+            data,
+            get_settings(),
+            source_client_factory=source_factory,
+            synthesis_client_factory=synthesis_factory,
+        )
+        assert second.request.id == first.request.id
+        assert second.run.run_key != first_key
+        assert second.payload["status"] == "ANSWERED"
+
+        session.commit()
+        before = {
+            "runs": session.scalar(select(func.count()).select_from(CompleteAnswerRun)),
+            "claims": session.scalar(
+                select(func.count()).select_from(CompleteAnswerClaim)
+            ),
+        }
+        session.close()
+        session = session_factory()()
+        shown = complete_show_payload(session, first_key)
+        assert shown["run_key"] == first_key
+        assert shown["status"] == "ANSWERED"
+        assert shown["citations"]
+        assert synthesis_clients[-1].call_count == 1
+        after = {
+            "runs": session.scalar(select(func.count()).select_from(CompleteAnswerRun)),
+            "claims": session.scalar(
+                select(func.count()).select_from(CompleteAnswerClaim)
+            ),
+        }
+        assert after == before
+    finally:
+        cleanup(session, ids)
+        session.close()
+
+
+def test_phase9d_all_no_fact_abstains_without_model_calls(tmp_path):
+    session, snapshot, build, _, _, ids = build_fixture(tmp_path)
+    ids["builds"].append(build.id)
+    source_clients = []
+    synthesis_calls = []
+
+    class NoCallClient:
+        model = "must-not-call"
+
+        def generate(self, _prompt):
+            raise AssertionError("provider não deve ser chamado")
+
+    try:
+        data = {
+            "question": "Pergunta sem evidência.",
+            "aspects": [
+                {
+                    "aspect_key": "missing",
+                    "subject_kind": "EVENT",
+                    "subject_key": "UNKNOWN",
+                    "source_inputs": [
+                        {
+                            "source": family,
+                            "requested_fact": {
+                                "fact_type": "UNSUPPORTED_FACT",
+                                "subject_kind": "EVENT",
+                                "subject_key": "UNKNOWN",
+                            },
+                            "profile": profile,
+                            "query": "text-that-does-not-exist",
+                        }
+                        for family, profile in (
+                            ("MOS", "MOS_EVENT_SECTION"),
+                            ("LAYOUT", "LAYOUT_FIELD"),
+                            ("XSD", "XSD_ELEMENT"),
+                        )
+                    ],
+                }
+            ],
+        }
+
+        def source_factory(_family):
+            client = NoCallClient()
+            client.call_count = 0
+            source_clients.append(client)
+            return client
+
+        def synthesis_factory():
+            synthesis_calls.append(True)
+            return NoCallClient()
+
+        result = execute_complete(
+            session,
+            build,
+            data,
+            get_settings(),
+            source_client_factory=source_factory,
+            synthesis_client_factory=synthesis_factory,
+        )
+        assert result.payload["status"] == "ABSTAINED"
+        assert all(client.call_count == 0 for client in source_clients)
+        assert synthesis_calls == [True]
+        assert result.payload["answer"]
     finally:
         cleanup(session, ids)
         session.close()

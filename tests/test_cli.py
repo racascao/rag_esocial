@@ -23,6 +23,9 @@ def test_answer_and_llm_commands_are_exposed() -> None:
     assert runner.invoke(app, ["answer", "generate", "--help"]).exit_code == 0
     assert runner.invoke(app, ["answer", "show", "--help"]).exit_code == 0
     assert runner.invoke(app, ["llm", "--help"]).exit_code == 0
+    assert runner.invoke(app, ["complete", "--help"]).exit_code == 0
+    assert runner.invoke(app, ["complete", "generate", "--help"]).exit_code == 0
+    assert runner.invoke(app, ["complete", "show", "--help"]).exit_code == 0
 
 
 def test_llm_status_cli(monkeypatch) -> None:
@@ -43,3 +46,56 @@ def test_llm_status_cli(monkeypatch) -> None:
     result = runner.invoke(app, ["llm", "status"])
     assert result.exit_code == 0
     assert '"model_available": true' in result.stdout
+
+
+def test_complete_cli_generate_and_show_use_structured_boundary(
+    monkeypatch, tmp_path
+) -> None:
+    class SessionContext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def rollback(self):
+            pass
+
+    class Factory:
+        def __call__(self):
+            return SessionContext()
+
+    class Build:
+        build_digest = "b" * 64
+
+    class Run:
+        run_key = "run-key"
+
+    class Result:
+        run = Run()
+        payload = {"run_key": run.run_key, "status": "ANSWERED"}
+
+    monkeypatch.setattr(cli, "session_factory", lambda: Factory())
+    monkeypatch.setattr(cli, "resolve_build", lambda _session, _value: Build())
+    monkeypatch.setattr(cli, "load_complete_input", lambda _path: {"question": "Q"})
+    monkeypatch.setattr(
+        cli,
+        "execute_complete",
+        lambda *_args, **_kwargs: Result(),
+    )
+    input_file = tmp_path / "complete.json"
+    input_file.write_text("{}", encoding="utf-8")
+    generated = runner.invoke(
+        app, ["complete", "generate", "--build", "build", "--input", str(input_file)]
+    )
+    assert generated.exit_code == 0, generated.stdout
+    assert '"run_key": "run-key"' in generated.stdout
+
+    monkeypatch.setattr(
+        cli,
+        "complete_show_payload",
+        lambda _session, _run: {"run_key": "run-key", "status": "ANSWERED"},
+    )
+    shown = runner.invoke(app, ["complete", "show", "--run", "run-key"])
+    assert shown.exit_code == 0, shown.stdout
+    assert '"status": "ANSWERED"' in shown.stdout

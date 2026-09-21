@@ -786,4 +786,5 @@ Com esta arquitetura, `esocial answer generate/show`, Q14 v1, Answer Contract v1
 `AnswerRunStatus` e migration 0011 continuam sem mudança. A extensão não cria
 hierarquia de autoridade documental, não escreve no fact graph e não mistura builds.
 Sua persistência/orquestração 9A, agregação determinística 9B e synthesis interna
-9C estão implementadas; CLI/recovery/observabilidade 9D permanecem não iniciadas.
+9C e a integração CLI/recovery/observabilidade da 9D estão implementadas. A
+próxima fase permanece fora deste documento.

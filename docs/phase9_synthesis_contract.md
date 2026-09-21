@@ -3,7 +3,7 @@
 ## Estado
 
 9C está COMPLETE pela migration `0014_complete_synthesis`. A API interna está em
-`rag_esocial/synthesis_service.py`. A CLI Complete pertence à 9D e não foi criada.
+`rag_esocial/synthesis_service.py` e é consumida pela CLI pública entregue na 9D.
 
 ## Boundary factual
 

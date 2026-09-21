@@ -320,6 +320,8 @@ def build_synthesis_context(session, run: CompleteAnswerRun):
                 select(FactResolutionSupport).where(
                     FactResolutionSupport.fact_resolution_id
                     == member.fact_resolution_id
+                ).order_by(
+                    FactResolutionSupport.support_order, FactResolutionSupport.id
                 )
             ).all()
             for support, evidence_ref in zip(supports, member.evidence_refs):
@@ -331,7 +333,7 @@ def build_synthesis_context(session, run: CompleteAnswerRun):
         for support in session.scalars(
             select(FactResolutionSupport).where(
                 FactResolutionSupport.fact_resolution_id == resolution_id
-            )
+            ).order_by(FactResolutionSupport.support_order, FactResolutionSupport.id)
         ):
             evidence_ref = evidence_ref_by_unit.get(support.evidence_unit_id)
             if evidence_ref:

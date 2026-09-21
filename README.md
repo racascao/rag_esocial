@@ -247,8 +247,8 @@ contexto canônico derivado somente de fatos resolvidos e suportes autorizados.
 Não há precedência silenciosa entre fontes.
 
 A synthesis cross-source interna da **Fase 9C** está implementada com contexto
-fechado, validator determinístico, claim ledger e renderer. A CLI Complete pública
-permanece reservada à **Fase 9D**.
+fechado, validator determinístico, claim ledger e renderer. A CLI Complete
+pública da **Fase 9D** compõe esses serviços sem duplicar retrieval ou síntese.
 
 ---
 
@@ -994,7 +994,7 @@ Fase 8   COMPLETE
 Fase 9A  COMPLETE
 Fase 9B  COMPLETE
 Fase 9C  COMPLETE
-Fase 9D  NEXT
+Fase 9D  COMPLETE
 Fase 9E  PLANNED
 Fase 10  PLANNED
 ```
@@ -1016,14 +1016,13 @@ Layout
 XSD
 ```
 
-sem usar LLM para decidir fatos. Não existe comando CLI público de Complete nesta
-subfase.
+sem usar LLM para decidir fatos. A CLI pública é responsabilidade da Fase 9D.
 
 ---
 
 ## Fase 9C — synthesis cross-source controlada por evidência
 
-Implementada como API interna, sem CLI pública:
+Implementada como API interna consumida pela CLI pública da Fase 9D:
 
 > **cross-source synthesis**
 
@@ -1040,6 +1039,28 @@ A synthesis continua sujeita aos mesmos princípios:
 * validação determinística;
 * ausência de fallback paramétrico.
 
+## Fase 9D — CLI pública e orquestração ponta a ponta
+
+**COMPLETE**
+
+Os comandos públicos são:
+
+```bash
+esocial complete generate --build BUILD_ID_O_DIGEST --input complete.json
+esocial complete show --run RUN_KEY
+```
+
+`generate` recebe somente um plano JSON estruturado e compõe as pipelines
+single-source, a agregação 9B e a síntese 9C. O request é idempotente e cada
+execução cria um novo run. `show` é read-only, funciona em nova sessão e não
+chama o provider. O contrato detalhado e o exemplo de entrada estão em
+`docs/phase9_complete_mode_cli.md`.
+
+O resultado preserva `ANSWERED`, `PARTIAL`, `ABSTAINED`, `MODEL_ERROR` e
+`VALIDATION_FAILED`, com claims, facts, citations, comparisons e limitações
+persistidos com proveniência. Não houve migration nova; o head permanece
+`0014_complete_synthesis`.
+
 ---
 
 # Funcionalidades deliberadamente ainda não implementadas
@@ -1052,7 +1073,6 @@ Atualmente o projeto **não possui**:
 * question decomposition por LLM;
 * query expansion;
 * auto-tuning;
-* CLI Complete pública;
 * aquisição automática de documentos oficiais;
 * frontend;
 * API HTTP;

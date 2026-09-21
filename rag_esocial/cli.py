@@ -16,6 +16,12 @@ from .answer_service import (
     execute_answer,
 )
 from .build_service import create_build
+from .complete_application_service import (
+    CompleteInputError,
+    complete_show_payload,
+    execute_complete,
+    load_complete_input,
+)
 from .config import get_settings
 from .corpus import (
     freeze_snapshot,
@@ -95,6 +101,10 @@ eval_app = typer.Typer(help="Avaliação DEV de retrieval e evidence assembly.")
 app.add_typer(eval_app, name="eval")
 answer_app = typer.Typer(help="Geração single-source pelo Answer Contract.")
 app.add_typer(answer_app, name="answer")
+complete_app = typer.Typer(
+    help="Orquestração pública Complete: MOS, Leiaute e XSD com proveniência."
+)
+app.add_typer(complete_app, name="complete")
 llm_app = typer.Typer(help="Diagnóstico do runtime local de geração.")
 app.add_typer(llm_app, name="llm")
 console = Console()
@@ -840,6 +850,63 @@ def answer_show(run: str = typer.Option(..., "--run")) -> None:
             console.print("AnswerRun não encontrado")
             raise typer.Exit(code=1)
         payload = _answer_run_payload(session, item)
+    console.print_json(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+
+
+@complete_app.command("generate")
+def complete_generate(
+    build: str = typer.Option(..., "--build", help="ID ou digest do CorpusBuild."),
+    input_file: Path = typer.Option(
+        ...,
+        "--input",
+        exists=True,
+        dir_okay=False,
+        help="JSON estruturado do Complete.",
+    ),
+) -> None:
+    """Executa Complete sobre MOS, Leiaute e XSD a partir de um plano JSON.
+
+    Facts e evidence permanecem source-specific; a síntese só ocorre quando a
+    policy e a cobertura autorizada permitem. Ausência de suporte pode produzir
+    ABSTAINED. O JSON de saída inclui run_key, status, limitações e citações;
+    use ``complete show --run RUN_KEY`` para reabrir o resultado.
+    """
+    settings = get_settings()
+    with session_factory()() as session:
+        target = resolve_build(session, build)
+        if not target:
+            console.print("Build não encontrado")
+            raise typer.Exit(code=1)
+        try:
+            data = load_complete_input(input_file)
+            result = execute_complete(session, target, data, settings)
+        except (CompleteInputError, ValueError) as error:
+            session.rollback()
+            console.print(f"Complete inválido: {error}")
+            raise typer.Exit(code=1) from error
+        except Exception as error:
+            session.rollback()
+            console.print(f"Falha na execução Complete: {error}")
+            raise typer.Exit(code=1) from error
+    console.print_json(json.dumps(result.payload, ensure_ascii=False, sort_keys=True))
+    if result.payload["status"] in {"MODEL_ERROR", "VALIDATION_FAILED"}:
+        raise typer.Exit(code=2)
+
+
+@complete_app.command("show")
+def complete_show(
+    run: str = typer.Option(..., "--run", help="run_key persistido do Complete.")
+) -> None:
+    """Reabre um CompleteAnswerRun persistido em modo somente leitura.
+
+    O comando não chama o provider, não cria novo run e pode ser executado após
+    reinício lógico usando apenas o run_key persistido.
+    """
+    with session_factory()() as session:
+        payload = complete_show_payload(session, run)
+    if payload is None:
+        console.print("CompleteAnswerRun não encontrado")
+        raise typer.Exit(code=1)
     console.print_json(json.dumps(payload, ensure_ascii=False, sort_keys=True))
 
 

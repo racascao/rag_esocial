@@ -16,10 +16,10 @@
 - Fase 6: Evidence Assembly experimental e resolução.
 - Fase 7: síntese restrita por evidência.
 - Fase 8: COMPLETE — Answer Contract single-source, Ollama/`gemma4:12b`, validação determinística e Q14 fake/live 14/14.
-- Fase 9: IN_PROGRESS — 9A COMPLETE (`0012_complete_answer`), 9B COMPLETE (`0013_cross_source_aggregation`) e 9C COMPLETE (`0014_complete_synthesis`), com contexto fechado, validator determinístico, claim ledger, renderer, retry único, nova sessão, rollback, B1/B2 e upstream immutability. 9D NEXT; CLI Complete permanece não implementada.
+- Fase 9: IN_PROGRESS — 9A COMPLETE (`0012_complete_answer`), 9B COMPLETE (`0013_cross_source_aggregation`), 9C COMPLETE (`0014_complete_synthesis`) e 9D COMPLETE. A 9D entrega a CLI pública estruturada, orquestração ponta a ponta, nova sessão, idempotência, múltiplos runs, rollback, B1/B2, abstention sem chamada de modelo, imutabilidade upstream e observabilidade read-only. 9E NEXT.
 - Fase 10: avaliação e operação.
 
 Invariantes são introduzidos na fase em que surgem. NL → RequestedFact, G2, Example/Observation, relações/divergências e referências órfãs permanecem decisões dependentes de evidência e amostragem.
 # Atualização de roadmap
 
-Fase 9 — IN_PROGRESS. Subfases 9A, 9B e 9C — COMPLETE: contrato persistente, agregação factual e synthesis interna cross-source controlada por evidência, sem CLI pública. Próxima: 9D — CLI, recovery e observabilidade.
+Fase 9 — IN_PROGRESS. Subfases 9A, 9B, 9C e 9D — COMPLETE: contrato persistente, agregação factual, synthesis interna cross-source controlada por evidência e CLI pública estruturada. Próxima: 9E — somente quando explicitamente iniciada.
