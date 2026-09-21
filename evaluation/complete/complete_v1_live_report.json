@@ -1,0 +1,481 @@
+{
+  "aggregates": {
+    "all": {
+      "case_count": 6,
+      "gate_pass": true
+    },
+    "fake": {
+      "case_count": 0,
+      "gate_pass": true
+    },
+    "live": {
+      "case_count": 6,
+      "gate_pass": true
+    }
+  },
+  "aggregates_by_category": [
+    {
+      "case_count": 1,
+      "category": "AGREEMENT",
+      "gate_pass_rate": 1.0,
+      "status_match_rate": 1.0
+    },
+    {
+      "case_count": 1,
+      "category": "ALL_NO_FACT",
+      "gate_pass_rate": 1.0,
+      "status_match_rate": 1.0
+    },
+    {
+      "case_count": 1,
+      "category": "DIVERGENCE",
+      "gate_pass_rate": 1.0,
+      "status_match_rate": 1.0
+    },
+    {
+      "case_count": 1,
+      "category": "SINGLE_SOURCE",
+      "gate_pass_rate": 1.0,
+      "status_match_rate": 1.0
+    },
+    {
+      "case_count": 1,
+      "category": "THREE_SOURCE",
+      "gate_pass_rate": 1.0,
+      "status_match_rate": 1.0
+    },
+    {
+      "case_count": 1,
+      "category": "TWO_SOURCE",
+      "gate_pass_rate": 1.0,
+      "status_match_rate": 1.0
+    }
+  ],
+  "aggregates_by_source_composition": [
+    {
+      "case_count": 1,
+      "gate_pass_rate": 1.0,
+      "source_composition": "MOS"
+    },
+    {
+      "case_count": 3,
+      "gate_pass_rate": 1.0,
+      "source_composition": "MOS+LAYOUT"
+    },
+    {
+      "case_count": 2,
+      "gate_pass_rate": 1.0,
+      "source_composition": "MOS+LAYOUT+XSD"
+    }
+  ],
+  "aggregation_revision": "cross-source-aggregation-v1",
+  "benchmark_case_count": 26,
+  "benchmark_id": "esocial-complete-v1",
+  "benchmark_revision": "v1",
+  "benchmark_sha256": "ee18fa66904fe874e13c3b342c93c58c0078ba9d1c4c36b2b6184e438ab013bc",
+  "case_count": 6,
+  "contract_revision": "complete-answer-contract-v1",
+  "executed_case_count": 6,
+  "gates": {
+    "all_no_fact_zero_calls": true,
+    "expected_status_match": true,
+    "model_call_policy_match": true,
+    "support_chain_violations": 0,
+    "unauthorized_comparison_refs": 0,
+    "unauthorized_evidence_refs": 0,
+    "unauthorized_fact_refs": 0,
+    "wrong_build_leakage": 0
+  },
+  "human_review": {
+    "status": "NOT_REVIEWED"
+  },
+  "live_eligible_case_count": 6,
+  "metric_rates": {
+    "abstention_policy_accuracy": 1.0,
+    "citation_validity": 1.0,
+    "claim_support_completeness": 1.0,
+    "expected_status_match": 1.0,
+    "model_call_policy_match": 1.0,
+    "renderer_disclosure": 1.0,
+    "show_read_only": 1.0,
+    "source_attribution_coverage": 1.0,
+    "support_chain_valid": 1.0
+  },
+  "mode": "live",
+  "model": "gemma4:12b",
+  "orchestration_revision": "complete-orchestration-v1",
+  "prompt_revision": "complete-synthesis-prompt-v1",
+  "provider": "ollama",
+  "report_sha256": "75a25634f1d2481b1197d9eee44ee07220631b649fce87e78e1103f360784537",
+  "results": [
+    {
+      "case_id": "agreement",
+      "category": "AGREEMENT",
+      "expected_model_calls": 1,
+      "expected_status": "ANSWERED",
+      "live_eligible": true,
+      "metrics": {
+        "abstention_policy_accuracy": true,
+        "citation_validity": true,
+        "claim_support_completeness": true,
+        "divergence_preservation": true,
+        "expected_status_match": true,
+        "forbidden_comparison_count": 0,
+        "forbidden_evidence_count": 0,
+        "forbidden_fact_count": 0,
+        "forbidden_ref_count": 0,
+        "gate_pass": true,
+        "model_call_policy_match": true,
+        "renderer_disclosure": true,
+        "required_comparison_recall": 1.0,
+        "required_evidence_recall": 1.0,
+        "required_fact_recall": 1.0,
+        "required_limitation_recall": null,
+        "show_read_only": true,
+        "source_attribution_coverage": true,
+        "structured_output_valid": true,
+        "support_chain_valid": true,
+        "unauthorized_comparison_count": 0,
+        "unauthorized_evidence_count": 0,
+        "unauthorized_fact_count": 0
+      },
+      "observed": {
+        "comparison_refs": [
+          "X1"
+        ],
+        "evidence_refs": [
+          "MOS:E1",
+          "LAYOUT:E1"
+        ],
+        "fact_refs": [
+          "MOS:F1",
+          "LAYOUT:F1"
+        ],
+        "limitations": [],
+        "model_calls": 1,
+        "provider_errors": [],
+        "renderer": [],
+        "show_read_only": true,
+        "source_attribution_valid": true,
+        "source_composition": [
+          "MOS",
+          "LAYOUT"
+        ],
+        "status": "ANSWERED",
+        "structured_output_valid": true,
+        "support_chain_valid": true
+      },
+      "observed_model_calls": 1,
+      "observed_status": "ANSWERED"
+    },
+    {
+      "case_id": "divergence",
+      "category": "DIVERGENCE",
+      "expected_model_calls": 1,
+      "expected_status": "ANSWERED",
+      "live_eligible": true,
+      "metrics": {
+        "abstention_policy_accuracy": true,
+        "citation_validity": true,
+        "claim_support_completeness": true,
+        "divergence_preservation": true,
+        "expected_status_match": true,
+        "forbidden_comparison_count": 0,
+        "forbidden_evidence_count": 0,
+        "forbidden_fact_count": 0,
+        "forbidden_ref_count": 0,
+        "gate_pass": true,
+        "model_call_policy_match": true,
+        "renderer_disclosure": true,
+        "required_comparison_recall": 1.0,
+        "required_evidence_recall": 1.0,
+        "required_fact_recall": 1.0,
+        "required_limitation_recall": null,
+        "show_read_only": true,
+        "source_attribution_coverage": true,
+        "structured_output_valid": true,
+        "support_chain_valid": true,
+        "unauthorized_comparison_count": 0,
+        "unauthorized_evidence_count": 0,
+        "unauthorized_fact_count": 0
+      },
+      "observed": {
+        "comparison_refs": [
+          "X1"
+        ],
+        "evidence_refs": [
+          "MOS:E1",
+          "LAYOUT:E1"
+        ],
+        "fact_refs": [
+          "MOS:F1",
+          "LAYOUT:F1"
+        ],
+        "limitations": [],
+        "model_calls": 1,
+        "provider_errors": [],
+        "renderer": [
+          "Comparações determinísticas"
+        ],
+        "show_read_only": true,
+        "source_attribution_valid": true,
+        "source_composition": [
+          "MOS",
+          "LAYOUT"
+        ],
+        "status": "ANSWERED",
+        "structured_output_valid": true,
+        "support_chain_valid": true
+      },
+      "observed_model_calls": 1,
+      "observed_status": "ANSWERED"
+    },
+    {
+      "case_id": "single-source",
+      "category": "SINGLE_SOURCE",
+      "expected_model_calls": 1,
+      "expected_status": "ANSWERED",
+      "live_eligible": true,
+      "metrics": {
+        "abstention_policy_accuracy": true,
+        "citation_validity": true,
+        "claim_support_completeness": true,
+        "divergence_preservation": true,
+        "expected_status_match": true,
+        "forbidden_comparison_count": 0,
+        "forbidden_evidence_count": 0,
+        "forbidden_fact_count": 0,
+        "forbidden_ref_count": 0,
+        "gate_pass": true,
+        "model_call_policy_match": true,
+        "renderer_disclosure": true,
+        "required_comparison_recall": null,
+        "required_evidence_recall": 1.0,
+        "required_fact_recall": 1.0,
+        "required_limitation_recall": null,
+        "show_read_only": true,
+        "source_attribution_coverage": true,
+        "structured_output_valid": true,
+        "support_chain_valid": true,
+        "unauthorized_comparison_count": 0,
+        "unauthorized_evidence_count": 0,
+        "unauthorized_fact_count": 0
+      },
+      "observed": {
+        "comparison_refs": [],
+        "evidence_refs": [
+          "MOS:E1"
+        ],
+        "fact_refs": [
+          "MOS:F1"
+        ],
+        "limitations": [],
+        "model_calls": 1,
+        "provider_errors": [],
+        "renderer": [],
+        "show_read_only": true,
+        "source_attribution_valid": true,
+        "source_composition": [
+          "MOS"
+        ],
+        "status": "ANSWERED",
+        "structured_output_valid": true,
+        "support_chain_valid": true
+      },
+      "observed_model_calls": 1,
+      "observed_status": "ANSWERED"
+    },
+    {
+      "case_id": "two-source",
+      "category": "TWO_SOURCE",
+      "expected_model_calls": 1,
+      "expected_status": "ANSWERED",
+      "live_eligible": true,
+      "metrics": {
+        "abstention_policy_accuracy": true,
+        "citation_validity": true,
+        "claim_support_completeness": true,
+        "divergence_preservation": true,
+        "expected_status_match": true,
+        "forbidden_comparison_count": 0,
+        "forbidden_evidence_count": 0,
+        "forbidden_fact_count": 0,
+        "forbidden_ref_count": 0,
+        "gate_pass": true,
+        "model_call_policy_match": true,
+        "renderer_disclosure": true,
+        "required_comparison_recall": 1.0,
+        "required_evidence_recall": 1.0,
+        "required_fact_recall": 1.0,
+        "required_limitation_recall": null,
+        "show_read_only": true,
+        "source_attribution_coverage": true,
+        "structured_output_valid": true,
+        "support_chain_valid": true,
+        "unauthorized_comparison_count": 0,
+        "unauthorized_evidence_count": 0,
+        "unauthorized_fact_count": 0
+      },
+      "observed": {
+        "comparison_refs": [
+          "X1"
+        ],
+        "evidence_refs": [
+          "MOS:E1",
+          "LAYOUT:E1"
+        ],
+        "fact_refs": [
+          "MOS:F1",
+          "LAYOUT:F1"
+        ],
+        "limitations": [],
+        "model_calls": 1,
+        "provider_errors": [],
+        "renderer": [],
+        "show_read_only": true,
+        "source_attribution_valid": true,
+        "source_composition": [
+          "MOS",
+          "LAYOUT"
+        ],
+        "status": "ANSWERED",
+        "structured_output_valid": true,
+        "support_chain_valid": true
+      },
+      "observed_model_calls": 1,
+      "observed_status": "ANSWERED"
+    },
+    {
+      "case_id": "three-source",
+      "category": "THREE_SOURCE",
+      "expected_model_calls": 1,
+      "expected_status": "ANSWERED",
+      "live_eligible": true,
+      "metrics": {
+        "abstention_policy_accuracy": true,
+        "citation_validity": true,
+        "claim_support_completeness": true,
+        "divergence_preservation": true,
+        "expected_status_match": true,
+        "forbidden_comparison_count": 0,
+        "forbidden_evidence_count": 0,
+        "forbidden_fact_count": 0,
+        "forbidden_ref_count": 0,
+        "gate_pass": true,
+        "model_call_policy_match": true,
+        "renderer_disclosure": true,
+        "required_comparison_recall": 1.0,
+        "required_evidence_recall": 1.0,
+        "required_fact_recall": 1.0,
+        "required_limitation_recall": null,
+        "show_read_only": true,
+        "source_attribution_coverage": true,
+        "structured_output_valid": true,
+        "support_chain_valid": true,
+        "unauthorized_comparison_count": 0,
+        "unauthorized_evidence_count": 0,
+        "unauthorized_fact_count": 0
+      },
+      "observed": {
+        "comparison_refs": [
+          "X1"
+        ],
+        "evidence_refs": [
+          "MOS:E1",
+          "LAYOUT:E1",
+          "XSD:E1"
+        ],
+        "fact_refs": [
+          "MOS:F1",
+          "LAYOUT:F1",
+          "XSD:F1"
+        ],
+        "limitations": [],
+        "model_calls": 1,
+        "provider_errors": [],
+        "renderer": [],
+        "show_read_only": true,
+        "source_attribution_valid": true,
+        "source_composition": [
+          "MOS",
+          "LAYOUT",
+          "XSD"
+        ],
+        "status": "ANSWERED",
+        "structured_output_valid": true,
+        "support_chain_valid": true
+      },
+      "observed_model_calls": 1,
+      "observed_status": "ANSWERED"
+    },
+    {
+      "case_id": "all-no-fact",
+      "category": "ALL_NO_FACT",
+      "expected_model_calls": 0,
+      "expected_status": "ABSTAINED",
+      "live_eligible": true,
+      "metrics": {
+        "abstention_policy_accuracy": true,
+        "citation_validity": true,
+        "claim_support_completeness": true,
+        "divergence_preservation": true,
+        "expected_status_match": true,
+        "forbidden_comparison_count": 0,
+        "forbidden_evidence_count": 0,
+        "forbidden_fact_count": 0,
+        "forbidden_ref_count": 0,
+        "gate_pass": true,
+        "model_call_policy_match": true,
+        "renderer_disclosure": true,
+        "required_comparison_recall": null,
+        "required_evidence_recall": null,
+        "required_fact_recall": null,
+        "required_limitation_recall": 1.0,
+        "show_read_only": true,
+        "source_attribution_coverage": true,
+        "structured_output_valid": true,
+        "support_chain_valid": true,
+        "unauthorized_comparison_count": 0,
+        "unauthorized_evidence_count": 0,
+        "unauthorized_fact_count": 0
+      },
+      "observed": {
+        "comparison_refs": [],
+        "evidence_refs": [],
+        "fact_refs": [],
+        "limitations": [
+          "NO_RELEVANT_EVIDENCE"
+        ],
+        "model_calls": 0,
+        "provider_errors": [],
+        "renderer": [],
+        "show_read_only": true,
+        "source_attribution_valid": true,
+        "source_composition": [
+          "MOS",
+          "LAYOUT",
+          "XSD"
+        ],
+        "status": "ABSTAINED",
+        "structured_output_valid": true,
+        "support_chain_valid": true
+      },
+      "observed_model_calls": 0,
+      "observed_status": "ABSTAINED"
+    }
+  ],
+  "runtime": {
+    "base_url": "http://ollama:11434",
+    "model": "gemma4:12b",
+    "model_available": true,
+    "models": [
+      "gemma4:12b"
+    ],
+    "provider": "ollama",
+    "reachable": true,
+    "runtime_version": "0.33.2"
+  },
+  "schema_version": "complete-report-v1",
+  "skipped_by_design_case_count": 20,
+  "synthesis_contract_revision": "complete-answer-contract-v1"
+}

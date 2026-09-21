@@ -995,8 +995,8 @@ Fase 9A  COMPLETE
 Fase 9B  COMPLETE
 Fase 9C  COMPLETE
 Fase 9D  COMPLETE
-Fase 9E  PLANNED
-Fase 10  PLANNED
+Fase 9E  COMPLETE
+Fase 10  NEXT
 ```
 
 ## Fase 9B — agregação determinística cross-source
@@ -1060,6 +1060,31 @@ O resultado preserva `ANSWERED`, `PARTIAL`, `ABSTAINED`, `MODEL_ERROR` e
 `VALIDATION_FAILED`, com claims, facts, citations, comparisons e limitações
 persistidos com proveniência. Não houve migration nova; o head permanece
 `0014_complete_synthesis`.
+
+## Fase 9E — avaliação e benchmark Complete Mode
+
+**COMPLETE**
+
+O benchmark independente do Q14 está congelado em
+`evaluation/complete/complete_v1.json` com 26 casos e digest canônico
+`ee18fa66904fe874e13c3b342c93c58c0078ba9d1c4c36b2b6184e438ab013bc`.
+
+Execuções:
+
+```bash
+docker compose exec app uv run esocial eval complete --mode fake
+docker compose exec app uv run esocial eval complete --mode live-smoke
+docker compose exec app uv run esocial eval complete --mode live
+docker compose exec app uv run esocial eval complete-review
+```
+
+O fake cobre todos os casos com métricas determinísticas; o live usa somente
+`gemma4:12b` via Ollama e processa os casos marcados `live_eligible`. Os reports
+separados ficam em `evaluation/complete/`. Métricas automáticas medem estrutura,
+proveniência, suporte, cobertura, políticas e citações; não equivalem a
+correção semântica. O template de revisão humana permanece
+`NOT_REVIEWED`, sem LLM judge ou auto-tuning. Detalhes estão em
+`docs/evaluation_complete_mode.md`.
 
 ---
 

@@ -127,9 +127,7 @@ def _build_aspects(session, build, data):
                 CompleteSourceInputSpec(
                     document_family=family,
                     requested_fact=requested,
-                    retrieval_profile=_required(
-                        source_input.get("profile"), "profile"
-                    ),
+                    retrieval_profile=_required(source_input.get("profile"), "profile"),
                     query=_required(source_input.get("query"), "query"),
                     top_k=int(source_input.get("top_k", 5)),
                     retrieval_config=source_input.get("retrieval_config") or {},
@@ -197,9 +195,7 @@ def execute_complete(
     ).all()
     for family in SOURCE_ORDER:
         family_inputs = [
-            item
-            for item in inputs
-            if item.request_source.document_family == family
+            item for item in inputs if item.request_source.document_family == family
         ]
         if not family_inputs:
             continue
@@ -230,7 +226,11 @@ def execute_complete(
             session, source_request, source_client_factory(family)
         )
         register_complete_source_run(
-            session, run, family, source_request, source_run,
+            session,
+            run,
+            family,
+            source_request,
+            source_run,
             {"answer_status": source_run.status},
         )
         session.commit()
@@ -264,36 +264,36 @@ def complete_show_payload(session, run_key: str) -> dict | None:
         for member in sorted(row.members, key=lambda item: item.member_order):
             fact_refs[member.fact_resolution_id] = member.fact_ref
             supports = session.scalars(
-                select(FactResolutionSupport).where(
+                select(FactResolutionSupport)
+                .where(
                     FactResolutionSupport.fact_resolution_id
                     == member.fact_resolution_id
-                ).order_by(
-                    FactResolutionSupport.support_order, FactResolutionSupport.id
                 )
+                .order_by(FactResolutionSupport.support_order, FactResolutionSupport.id)
             ).all()
             for support, ref in zip(supports, member.evidence_refs):
                 evidence_refs[support.evidence_unit_id] = ref
     claims = session.scalars(
-        select(CompleteAnswerClaim).where(
-            CompleteAnswerClaim.complete_answer_run_id == run.id
-        ).order_by(CompleteAnswerClaim.claim_order)
+        select(CompleteAnswerClaim)
+        .where(CompleteAnswerClaim.complete_answer_run_id == run.id)
+        .order_by(CompleteAnswerClaim.claim_order)
     ).all()
     claim_payload = []
     for claim in claims:
         fact_rows = session.scalars(
-            select(CompleteAnswerClaimFact).where(
-                CompleteAnswerClaimFact.complete_answer_claim_id == claim.id
-            ).order_by(CompleteAnswerClaimFact.fact_resolution_id)
+            select(CompleteAnswerClaimFact)
+            .where(CompleteAnswerClaimFact.complete_answer_claim_id == claim.id)
+            .order_by(CompleteAnswerClaimFact.fact_resolution_id)
         ).all()
         citation_rows = session.scalars(
-            select(CompleteAnswerCitation).where(
-                CompleteAnswerCitation.complete_answer_claim_id == claim.id
-            ).order_by(CompleteAnswerCitation.citation_order)
+            select(CompleteAnswerCitation)
+            .where(CompleteAnswerCitation.complete_answer_claim_id == claim.id)
+            .order_by(CompleteAnswerCitation.citation_order)
         ).all()
         comparison_rows = session.scalars(
-            select(CompleteAnswerClaimComparison).where(
-                CompleteAnswerClaimComparison.complete_answer_claim_id == claim.id
-            ).order_by(CompleteAnswerClaimComparison.comparison_id)
+            select(CompleteAnswerClaimComparison)
+            .where(CompleteAnswerClaimComparison.complete_answer_claim_id == claim.id)
+            .order_by(CompleteAnswerClaimComparison.comparison_id)
         ).all()
         claim_payload.append(
             {
@@ -301,8 +301,7 @@ def complete_show_payload(session, run_key: str) -> dict | None:
                 "text": claim.text,
                 "fact_refs": [fact_refs[row.fact_resolution_id] for row in fact_rows],
                 "evidence_refs": [
-                    evidence_refs[row.evidence_unit_id]
-                    for row in citation_rows
+                    evidence_refs[row.evidence_unit_id] for row in citation_rows
                 ],
                 "comparison_refs": [
                     comparison_refs[row.comparison_id] for row in comparison_rows

@@ -317,12 +317,12 @@ def build_synthesis_context(session, run: CompleteAnswerRun):
         for member in sorted(row.members, key=lambda item: item.member_order):
             fact_ref_by_resolution[member.fact_resolution_id] = member.fact_ref
             supports = session.scalars(
-                select(FactResolutionSupport).where(
+                select(FactResolutionSupport)
+                .where(
                     FactResolutionSupport.fact_resolution_id
                     == member.fact_resolution_id
-                ).order_by(
-                    FactResolutionSupport.support_order, FactResolutionSupport.id
                 )
+                .order_by(FactResolutionSupport.support_order, FactResolutionSupport.id)
             ).all()
             for support, evidence_ref in zip(supports, member.evidence_refs):
                 evidence_ref_by_unit[support.evidence_unit_id] = evidence_ref
@@ -331,9 +331,9 @@ def build_synthesis_context(session, run: CompleteAnswerRun):
     support_pairs = set()
     for resolution_id, fact_ref in fact_ref_by_resolution.items():
         for support in session.scalars(
-            select(FactResolutionSupport).where(
-                FactResolutionSupport.fact_resolution_id == resolution_id
-            ).order_by(FactResolutionSupport.support_order, FactResolutionSupport.id)
+            select(FactResolutionSupport)
+            .where(FactResolutionSupport.fact_resolution_id == resolution_id)
+            .order_by(FactResolutionSupport.support_order, FactResolutionSupport.id)
         ):
             evidence_ref = evidence_ref_by_unit.get(support.evidence_unit_id)
             if evidence_ref:

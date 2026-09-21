@@ -99,3 +99,10 @@ def test_complete_cli_generate_and_show_use_structured_boundary(
     shown = runner.invoke(app, ["complete", "show", "--run", "run-key"])
     assert shown.exit_code == 0, shown.stdout
     assert '"status": "ANSWERED"' in shown.stdout
+
+
+def test_complete_evaluation_cli_is_exposed() -> None:
+    result = runner.invoke(app, ["eval", "complete", "--help"])
+    assert result.exit_code == 0
+    assert "fake" in result.stdout
+    assert runner.invoke(app, ["eval", "complete-review", "--help"]).exit_code == 0

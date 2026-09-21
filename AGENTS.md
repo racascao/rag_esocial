@@ -31,6 +31,14 @@
 - Complete Mode é uma extensão aditiva; o Answer Contract v1 permanece single-source.
 - Objetos Complete são build-specific e não podem agregar source runs de outro build.
 - Respostas intermediárias geradas nunca são evidência para a camada Complete.
+- O benchmark Complete é independente do Q14, versionado e congelado antes de
+  qualquer execução canônica fake/live.
+- Gold estrutural de avaliação nunca é derivado de saída de modelo; mudanças
+  pós-freeze exigem nova versão do benchmark.
+- Métricas automáticas do Complete medem estrutura, provenance e política; não
+  substituem revisão semântica humana.
+- Avaliação não faz auto-tuning de prompt, retrieval, fatos, evidências ou
+  configuração de modelo.
 - Synthesis cross-source só usa facts, evidence e comparisons autorizados e
   source-qualified pelo contexto 9B.
 - Synthesis não cria SourceFact, FactResolution ou EntityRelation; sua provenance

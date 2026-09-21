@@ -22,6 +22,13 @@ from .complete_application_service import (
     execute_complete,
     load_complete_input,
 )
+from .complete_evaluation_service import (
+    CompleteBenchmarkError,
+    build_human_review_template,
+    evaluate_complete_fake,
+    evaluate_complete_live,
+    validate_complete_benchmark,
+)
 from .config import get_settings
 from .corpus import (
     freeze_snapshot,
@@ -74,6 +81,7 @@ from .mos_parser import parse_mos_text
 from .pdf_text import PdfTextExtractor
 from .q14_service import DeterministicQ14Client, evaluate_q14, validate_q14
 from .search_service import materialize_projection, search
+from .synthesis_service import OllamaSynthesisModelClient
 from .xsd_materializer import parse_and_materialize_xsd
 
 app = typer.Typer(help="Fundação CLI do assistente RAG eSocial.", no_args_is_help=True)
@@ -895,7 +903,7 @@ def complete_generate(
 
 @complete_app.command("show")
 def complete_show(
-    run: str = typer.Option(..., "--run", help="run_key persistido do Complete.")
+    run: str = typer.Option(..., "--run", help="run_key persistido do Complete."),
 ) -> None:
     """Reabre um CompleteAnswerRun persistido em modo somente leitura.
 
@@ -983,3 +991,102 @@ def eval_q14(
             console.print(f"Falha na avaliação Q14: {error}")
             raise typer.Exit(code=1) from error
     console.print_json(json.dumps(report, ensure_ascii=False, sort_keys=True))
+
+
+@eval_app.command("complete")
+def eval_complete(
+    mode: str = typer.Option(
+        "fake",
+        "--mode",
+        help=(
+            "Execução do benchmark Complete v1: fake, live-smoke ou live. "
+            "Q14 não é usado."
+        ),
+    ),
+    dataset: Path = typer.Option(
+        Path("evaluation/complete/complete_v1.json"),
+        "--dataset",
+        exists=True,
+        dir_okay=False,
+        help="Benchmark Complete v1 congelado.",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        help="Report JSON; o padrão separa fake, live-smoke e live.",
+    ),
+    human_review_output: Path | None = typer.Option(
+        None,
+        "--human-review-output",
+        help="Gera template separado, sempre NOT_REVIEWED.",
+    ),
+) -> None:
+    """Avalia Complete Mode com métricas estruturais, sem LLM judge.
+
+    Fake é determinístico. Live-smoke e live usam somente o modelo configurado
+    gemma4:12b via Ollama. Métricas automáticas não equivalem a revisão humana.
+    """
+    if mode not in {"fake", "live-smoke", "live"}:
+        console.print("Modo inválido; use fake, live-smoke ou live")
+        raise typer.Exit(code=1)
+    defaults = {
+        "fake": Path("evaluation/complete/complete_v1_fake_report.json"),
+        "live-smoke": Path("evaluation/complete/complete_v1_live_smoke_report.json"),
+        "live": Path("evaluation/complete/complete_v1_live_report.json"),
+    }
+    report_path = output or defaults[mode]
+    try:
+        validate_complete_benchmark(dataset)
+        if mode == "fake":
+            report = evaluate_complete_fake(dataset, report_path)
+        else:
+            settings = get_settings()
+            diagnostic = OllamaAnswerModelClient(
+                base_url=settings.ollama_base_url, model=settings.llm_model
+            ).status()
+            if not diagnostic["reachable"] or not diagnostic["model_available"]:
+                console.print_json(
+                    json.dumps(diagnostic, ensure_ascii=False, sort_keys=True)
+                )
+                raise typer.Exit(code=1)
+
+            def client_factory():
+                return OllamaSynthesisModelClient(
+                    base_url=settings.ollama_base_url, model=settings.llm_model
+                )
+
+            report = evaluate_complete_live(
+                dataset,
+                client_factory,
+                report_path,
+                smoke=mode == "live-smoke",
+                runtime=diagnostic,
+            )
+        if human_review_output:
+            build_human_review_template(dataset, human_review_output)
+    except CompleteBenchmarkError as error:
+        console.print(f"Benchmark Complete inválido: {error}")
+        raise typer.Exit(code=1) from error
+    console.print_json(json.dumps(report, ensure_ascii=False, sort_keys=True))
+
+
+@eval_app.command("complete-review")
+def eval_complete_review(
+    dataset: Path = typer.Option(
+        Path("evaluation/complete/complete_v1.json"),
+        "--dataset",
+        exists=True,
+        dir_okay=False,
+    ),
+    output: Path = typer.Option(
+        Path("evaluation/complete/complete_v1_human_review_template.json"),
+        "--output",
+    ),
+) -> None:
+    """Cria o template de revisão humana sem preencher julgamentos."""
+    try:
+        template = build_human_review_template(dataset, output)
+    except CompleteBenchmarkError as error:
+        console.print(f"Benchmark Complete inválido: {error}")
+        raise typer.Exit(code=1) from error
+    console.print_json(json.dumps(template, ensure_ascii=False, sort_keys=True))
