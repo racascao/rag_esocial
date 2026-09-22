@@ -1,3 +1,5 @@
+import zipfile
+
 import pytest
 
 from rag_esocial.acquisition_service import (
@@ -110,6 +112,20 @@ def test_validate_download_rejects_wrong_physical_types(tmp_path):
     layout.write_text("plain text")
     with pytest.raises(AcquisitionError, match="HTML válido"):
         validate_download(layout, "LAYOUT_MAIN")
+
+
+@pytest.mark.parametrize(
+    "member", ["../escape.xsd", "..\\escape.xsd", "C:\\escape.xsd"]
+)
+def test_validate_download_rejects_zip_slip_for_posix_and_windows_paths(
+    tmp_path, member
+):
+    archive = tmp_path / "unsafe.zip"
+    with zipfile.ZipFile(archive, "w") as package:
+        package.writestr(member, "<xs:schema/>")
+
+    with pytest.raises(AcquisitionError, match="caminho inseguro"):
+        validate_download(archive, "XSD_PACKAGE")
 
 
 class _Response:

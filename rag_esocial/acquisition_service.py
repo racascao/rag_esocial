@@ -12,7 +12,7 @@ import uuid
 import zipfile
 from dataclasses import dataclass
 from html.parser import HTMLParser
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from urllib.parse import urljoin, urlparse, urlsplit, urlunsplit
 
 
@@ -80,8 +80,14 @@ def validate_download(path: Path, role: str) -> None:
                 if not names:
                     raise AcquisitionError("O pacote XSD não contém esquemas XSD.")
                 for name in names:
-                    safe = Path(name)
-                    if safe.is_absolute() or ".." in safe.parts:
+                    posix_path = PurePosixPath(name.replace("\\", "/"))
+                    windows_path = PureWindowsPath(name)
+                    if (
+                        posix_path.is_absolute()
+                        or windows_path.is_absolute()
+                        or windows_path.drive
+                        or ".." in posix_path.parts
+                    ):
                         raise AcquisitionError("O pacote XSD contém caminho inseguro.")
                     archive.open(name).close()
         except zipfile.BadZipFile as error:
