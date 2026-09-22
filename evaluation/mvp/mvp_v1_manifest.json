@@ -1,5 +1,5 @@
 {
-  "alembic_head": "0014_complete_synthesis",
+  "alembic_head": "0015_active_runtime",
   "complete_benchmark": {
     "cases": 26,
     "path": "evaluation/complete/complete_v1.json",
@@ -26,7 +26,7 @@
     "Initial official snapshot/build is not materialized in the current database.",
     "Retrieval baseline is PostgreSQL FTS; embeddings and reranking are out of scope."
   ],
-  "new_migrations": "NONE",
+  "new_migrations": "0015_active_runtime",
   "non_scope": [
     "LLM judge",
     "auto-tuning",

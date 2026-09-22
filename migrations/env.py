@@ -1,10 +1,12 @@
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from rag_esocial.config import get_settings
+from rag_esocial.config import database_url_for_environment
 
 config = context.config
-config.set_main_option("sqlalchemy.url", get_settings().database_url.replace("%", "%%"))
+config.set_main_option(
+    "sqlalchemy.url", database_url_for_environment().replace("%", "%%")
+)
 
 
 def run_migrations_offline() -> None:

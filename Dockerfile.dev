@@ -5,7 +5,7 @@ WORKDIR /app
 RUN useradd --create-home --uid 1000 appuser && mkdir -p /opt/venv && chown -R appuser:appuser /opt/venv /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --all-groups
+RUN chown -R appuser:appuser /opt/venv
 COPY --chown=appuser:appuser . .
 USER appuser
 CMD ["sleep", "infinity"]
-

@@ -1,1 +1,1 @@
-"""Nenhuma entidade de domínio é criada na Fase 0."""
+"""Model registry imports are intentionally kept explicit in application modules."""

@@ -3,5 +3,8 @@
 __pycache__/
 .pytest_cache/
 .ruff_cache/
+.local/
+.local/db_backups/
+.local/volume_backups/
+.local/test_isolation_snapshots/
 *.py[cod]
-

@@ -1,0 +1,45 @@
+#!/bin/sh
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+cd "$SCRIPT_DIR"
+
+INPUT_FILE=
+if [ ! -t 0 ]; then
+    INPUT_FILE=$(mktemp)
+    trap 'rm -f "$INPUT_FILE"' EXIT INT TERM
+    cat >"$INPUT_FILE"
+fi
+
+if ! command -v docker >/dev/null 2>&1; then
+    echo "Docker não foi encontrado. Instale Docker antes de executar ./esocial." >&2
+    exit 127
+fi
+
+if ! docker compose version >/dev/null 2>&1; then
+    echo "Docker Compose não está disponível. Instale o plugin Docker Compose." >&2
+    exit 127
+fi
+
+if ! docker info >/dev/null 2>&1; then
+    echo "O daemon Docker não está disponível. Inicie Docker e tente novamente." >&2
+    exit 1
+fi
+
+docker compose up -d --build
+
+attempt=0
+while ! docker compose exec -T db pg_isready -U esocial -d esocial >/dev/null 2>&1; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 60 ]; then
+        echo "PostgreSQL não ficou saudável a tempo." >&2
+        exit 1
+    fi
+    sleep 1
+done
+
+docker compose exec -T app uv run alembic upgrade head </dev/null
+if [ -t 0 ]; then
+    exec docker compose exec app uv run esocial app
+fi
+exec docker compose exec -T app uv run esocial app <"$INPUT_FILE"

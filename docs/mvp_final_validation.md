@@ -5,8 +5,9 @@
 **Fase 10 — COMPLETE.** As Fases 0–10 estão concluídas. A Fase 11 não foi
 iniciada.
 
-Baseline: `b28cd91` na branch `main`. O head Alembic permanece
-`0014_complete_synthesis`; não há migrations novas nesta fase.
+Baseline: `b28cd91` na branch `main`. O head Alembic da validação do MVP era
+`0014_complete_synthesis`; a operacionalização pós-MVP adiciona somente a
+migration aditiva `0015_active_runtime`.
 
 ## Gates reproduzíveis
 

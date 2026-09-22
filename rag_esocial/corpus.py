@@ -5,7 +5,7 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import get_settings
+from .config import corpus_storage_path_for_environment
 from .models.corpus import (
     REQUIRED_ROLES,
     ArchiveMember,
@@ -23,7 +23,7 @@ def sha256_file(path: Path) -> str:
 
 
 def storage_root() -> Path:
-    root = Path(get_settings().corpus_storage_path)
+    root = corpus_storage_path_for_environment()
     root.mkdir(parents=True, exist_ok=True)
     return root
 

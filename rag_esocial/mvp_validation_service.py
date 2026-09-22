@@ -14,7 +14,7 @@ from .q14_service import validate_q14
 
 Q14_SHA256 = "30dad081fde8b59f448bd8675fdfa298c22c8d2da5dddf9ba7f30e3e8796e3c7"
 COMPLETE_SHA256 = "ee18fa66904fe874e13c3b342c93c58c0078ba9d1c4c36b2b6184e438ab013bc"
-ALEMBIC_HEAD = "0014_complete_synthesis"
+ALEMBIC_HEAD = "0015_active_runtime"
 MANIFEST_SCHEMA_VERSION = "mvp-final-manifest-v1"
 
 
@@ -105,7 +105,7 @@ def validate_mvp_artifacts(root: Path = Path(".")) -> dict:
         if path.stem != "__init__"
     )
     gates["migration_inventory"] = migration_names == [
-        f"{index:04d}" for index in range(1, 15)
+        f"{index:04d}" for index in range(1, 16)
     ]
 
     automatic_gates = {
@@ -121,7 +121,7 @@ def validate_mvp_artifacts(root: Path = Path(".")) -> dict:
         "schema_version": MANIFEST_SCHEMA_VERSION,
         "status": status,
         "alembic_head": ALEMBIC_HEAD,
-        "new_migrations": "NONE",
+        "new_migrations": "0015_active_runtime",
         "q14": {"path": "evaluation/q14/q14_v1.json", "sha256": Q14_SHA256},
         "complete_benchmark": {
             "path": "evaluation/complete/complete_v1.json",

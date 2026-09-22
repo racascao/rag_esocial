@@ -189,15 +189,15 @@ def make_integration_pdf(path: Path) -> None:
         "S-9999 Evento de Teste",
         "Conceito",
         "Consultar S-1210 {ideDmDev}",
-        "Quem está obrigado",
+        "Quem esta obrigado",
         "Empregadores.",
         "Prazo de envio",
         "Até o prazo aplicável.",
-        "Pré-requisitos",
+        "Pre-requisitos",
         "REGRA_EXEMPLO [infoPerAnt] Tabela 05",
-        "Informações adicionais",
-        "1 Tópico com S-1210",
-        "1.1 Subitem com {perApur} e REGRA_SUBITEM",
+        "Informacoes adicionais",
+        "1. Tópico com S-1210",
+        "1.1. Subitem com {perApur} e REGRA_SUBITEM",
     ]
     commands = ["BT /F1 12 Tf 40 760 Td"]
     for index, line in enumerate(lines):
@@ -264,6 +264,9 @@ condition='REGRA_LAYOUT'>Descrição REGRA_LAYOUT e Tabela 05</p>
     payloads[ArtifactRole.XSD_PACKAGE.value] = xsd_path
 
     session = session_factory()()
+    from rag_esocial.db import assert_test_session
+
+    assert_test_session(session)
     ids = {"snapshots": [], "builds": [], "versions": [], "artifacts": []}
     try:
         versions = {}
@@ -367,6 +370,9 @@ condition='REGRA_LAYOUT'>Descrição REGRA_LAYOUT e Tabela 05</p>
 
 
 def cleanup(session, ids):
+    from rag_esocial.db import assert_test_session
+
+    assert_test_session(session)
     for model in [
         CompleteAnswerClaimComparison,
         CompleteAnswerCitation,

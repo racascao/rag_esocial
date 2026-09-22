@@ -22,3 +22,9 @@ def test_layout_event_group_field_hierarchy_and_references() -> None:
         "DOMAIN_TABLE_REFERENCE",
         "EVENT_CODE",
     }
+
+
+def test_layout_reference_without_a_structural_owner_is_not_materialized() -> None:
+    result = parse_layout_html("<title>Tabela 12 REGRA_GLOBAL</title>" + HTML)
+
+    assert all(reference.owner_path != "LAYOUT" for reference in result.references)

@@ -17,6 +17,7 @@ from .models.mos import (
     MosEventTopic,
     MosTopic,
 )
+from .mos_parser import validate_mos_structure
 from .validators import snapshot_membership_validity
 
 
@@ -43,6 +44,7 @@ def materialize_mos(
     )
     if existing:
         return existing, False
+    validate_mos_structure(result)
     document = MosDocument(
         id=str(uuid.uuid4()),
         corpus_build_id=build.id,

@@ -109,6 +109,11 @@ class _LayoutHTMLParser(HTMLParser):
                 if self.current_event
                 else "LAYOUT"
             )
+            # Text outside a parsed event has no structural owner and cannot
+            # become authorized evidence. Do not manufacture a root target.
+            if owner == "LAYOUT":
+                self.text_parts = []
+                return
             for pattern, kind in [
                 (r"\bREGRA_[A-Z0-9_]+\b", "RULE_REFERENCE"),
                 (r"\bTabela\s+\d+\b", "DOMAIN_TABLE_REFERENCE"),

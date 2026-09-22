@@ -1,3 +1,4 @@
+import re
 import xml.etree.ElementTree as ET
 import zipfile
 from dataclasses import dataclass, field
@@ -8,6 +9,11 @@ XS = "http://www.w3.org/2001/XMLSchema"
 
 def q(local):
     return f"{{{XS}}}{local}"
+
+
+def _active_xml_declarations(raw: bytes) -> bytes:
+    """Remove comments before rejecting declarations that XML parsers may act on."""
+    return re.sub(rb"<!--.*?-->", b"", raw, flags=re.DOTALL).upper()
 
 
 @dataclass
@@ -94,7 +100,8 @@ def parse_xsd_package(path):
     with zipfile.ZipFile(path) as archive:
         for name in sorted(x for x in archive.namelist() if x.lower().endswith(".xsd")):
             raw = archive.read(name)
-            if b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
+            active = _active_xml_declarations(raw)
+            if b"<!DOCTYPE" in active or b"<!ENTITY" in active:
                 raise ValueError(f"external XML declaration rejected: {name}")
             root = ET.fromstring(raw)
             ns = root.get("targetNamespace")

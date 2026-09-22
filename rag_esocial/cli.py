@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import uuid
 from datetime import datetime, timezone
@@ -10,6 +11,7 @@ from rich.table import Table
 from sqlalchemy import func, select
 
 from . import __version__
+from .acquisition_service import SourceInput
 from .answer_service import (
     OllamaAnswerModelClient,
     create_answer_request,
@@ -77,11 +79,14 @@ from .models.xsd import (
     XsdSharedType,
 )
 from .mos_materializer import materialize_mos
-from .mos_parser import parse_mos_text
+from .mos_parser import parse_mos_pages
 from .mvp_validation_service import validate_mvp_artifacts, write_mvp_manifest
 from .pdf_text import PdfTextExtractor
 from .q14_service import DeterministicQ14Client, evaluate_q14, validate_q14
+from .runtime_defaults import DEFAULT_SEARCH_PROFILE
+from .runtime_service import active_runtime_summary, get_active_runtime
 from .search_service import materialize_projection, search
+from .setup_service import SetupError, prepare_runtime
 from .synthesis_service import OllamaSynthesisModelClient
 from .xsd_materializer import parse_and_materialize_xsd
 
@@ -116,6 +121,8 @@ complete_app = typer.Typer(
 app.add_typer(complete_app, name="complete")
 llm_app = typer.Typer(help="Diagnóstico do runtime local de geração.")
 app.add_typer(llm_app, name="llm")
+operator_app = typer.Typer(help="Experiência normal do usuário do eSocial.")
+app.add_typer(operator_app, name="app")
 console = Console()
 
 
@@ -146,9 +153,167 @@ def db_status() -> None:
     console.print(table)
 
 
+def _normal_runtime_status() -> None:
+    with session_factory()() as session:
+        summary = active_runtime_summary(session)
+    if not summary:
+        console.print("Sistema: preparação necessária")
+        return
+    console.print("Sistema: pronto")
+    for role, label in (
+        ("MOS_MAIN", "MOS"),
+        ("LAYOUT_MAIN", "Leiaute"),
+        ("XSD_PACKAGE", "XSD"),
+    ):
+        console.print(f"{label}: {summary['versions'].get(role, 'indisponível')}")
+    console.print("Corpus: ativo")
+
+
+def _ask_source_urls() -> SourceInput:
+    console.print("Nenhum artefato do eSocial foi importado.")
+    console.print("Para preparar o sistema, informe as três fontes oficiais.")
+    return SourceInput(
+        mos_url=typer.prompt("URL do MOS"),
+        xsd_url=typer.prompt("URL do pacote XSD"),
+        layout_url=typer.prompt("URL do Leiaute"),
+    )
+
+
+def _prepare_with_progress(urls: SourceInput | None = None) -> None:
+    labels = {
+        "Processando MOS": "[7/9] Processando MOS",
+        "Processando Leiaute": "[7/9] Processando Leiaute",
+        "Processando XSD": "[7/9] Processando XSD",
+        "Construindo fatos": "[8/9] Construindo fatos",
+        "Construindo índice de busca": "[9/9] Construindo índice de busca",
+    }
+    with session_factory()() as session:
+        result = prepare_runtime(
+            session,
+            urls=urls,
+            progress=lambda label: console.print(labels.get(label, label)),
+        )
+    if result.get("same_version"):
+        console.print("Nenhuma nova versão foi detectada.")
+        return
+    console.print("[1/1] Versão ativa e pronta para consultas.")
+
+
+def _operator_failure(prefix: str, error: Exception) -> None:
+    console.print(f"{prefix}: {error}")
+    if os.getenv("ESOCIAL_DEBUG") == "1":
+        console.print_exception()
+
+
+def _query_active(profile: str = DEFAULT_SEARCH_PROFILE) -> None:
+    question = typer.prompt("Consulta")
+    with session_factory()() as session:
+        runtime = get_active_runtime(session)
+        if not runtime:
+            console.print("O sistema ainda não está pronto para consultas.")
+            return
+        projection = runtime.projection
+        if projection.profile != profile:
+            projection = session.scalar(
+                select(SearchProjection).where(
+                    SearchProjection.corpus_build_id == runtime.corpus_build_id,
+                    SearchProjection.profile == profile,
+                )
+            )
+        rows = search(session, projection, question, limit=5) if projection else []
+    if not rows:
+        console.print("Nenhuma evidência autorizada foi encontrada.")
+        return
+    console.print("Evidências encontradas:")
+    for index, row in enumerate(rows, start=1):
+        title = row.get("title") or row["source_local_stable_path"]
+        console.print(f"{index}. {title} — {row['source_local_stable_path']}")
+
+
+def _main_menu() -> None:
+    while True:
+        console.print(
+            "\n1. MOS\n2. Leiaute\n3. XSD\n4. Consulta Completa\n"
+            "5. Importar nova versão\n6. Status\n0. Sair"
+        )
+        choice = typer.prompt("Escolha", default="0").strip()
+        if choice == "0":
+            return
+        if choice in {"1", "2", "3", "4"}:
+            _query_active()
+            continue
+        if choice == "6":
+            _normal_runtime_status()
+            continue
+        if choice == "5":
+            if not typer.confirm(
+                "Existe uma nova versão do eSocial e deseja importá-la?", default=False
+            ):
+                console.print("Versão ativa preservada.")
+                continue
+            try:
+                _prepare_with_progress(_ask_source_urls())
+            except Exception as error:
+                _operator_failure(
+                    "A nova versão não pôde ser preparada. "
+                    "A versão anterior continua ativa\nMotivo",
+                    error,
+                )
+            continue
+        console.print("Escolha uma opção do menu.")
+
+
+@operator_app.command("run")
+def operator_run() -> None:
+    """Inicializa/resume o runtime e abre a experiência interativa."""
+    with session_factory()() as session:
+        has_active = get_active_runtime(session) is not None
+    if has_active:
+        _normal_runtime_status()
+        if typer.confirm(
+            "Existe uma nova versão do eSocial e deseja importá-la?", default=False
+        ):
+            try:
+                _prepare_with_progress(_ask_source_urls())
+            except Exception as error:
+                _operator_failure(
+                    "A nova versão não pôde ser preparada. "
+                    "A versão anterior continua ativa\nMotivo",
+                    error,
+                )
+    else:
+        try:
+            _prepare_with_progress()
+        except SetupError as error:
+            if "três URLs" not in str(error):
+                console.print(f"Não foi possível retomar a preparação: {error}")
+                raise typer.Exit(code=1) from error
+            try:
+                _prepare_with_progress(_ask_source_urls())
+            except Exception as source_error:
+                _operator_failure("A preparação não pôde ser concluída", source_error)
+                raise typer.Exit(code=1) from source_error
+        except Exception as error:
+            _operator_failure(
+                "Não foi possível concluir a preparação do eSocial", error
+            )
+            raise typer.Exit(code=1) from error
+    _main_menu()
+
+
+@operator_app.callback(invoke_without_command=True)
+def operator_entry(ctx: typer.Context) -> None:
+    if ctx.invoked_subcommand is None:
+        operator_run()
+
+
 def current_snapshot(session) -> CorpusSnapshot | None:
     return session.scalar(
-        select(CorpusSnapshot).where(CorpusSnapshot.slug == "esocial-s1.3-snapshot-001")
+        select(CorpusSnapshot).order_by(
+            CorpusSnapshot.frozen_at.is_not(None).desc(),
+            CorpusSnapshot.created_at.desc(),
+            CorpusSnapshot.id.desc(),
+        )
     )
 
 
@@ -181,6 +346,16 @@ def corpus_status() -> None:
         console.print(f"Membros: {len(snapshot.members)}")
         if snapshot.manifest_sha256:
             console.print(f"Manifest SHA-256: {snapshot.manifest_sha256}")
+        build = session.scalar(
+            select(CorpusBuild)
+            .where(CorpusBuild.corpus_snapshot_id == snapshot.id)
+            .order_by(CorpusBuild.created_at.desc(), CorpusBuild.id.desc())
+        )
+        if build:
+            console.print(f"Build: {build.id}")
+            console.print(f"Build status: {build.status}")
+            if not get_active_runtime(session):
+                console.print("Preparação: incompleta / resumível")
 
 
 @corpus_app.command("verify")
@@ -347,7 +522,7 @@ def mos_parse(build: str = typer.Option(..., "--build")) -> None:
         from .corpus import storage_root
 
         pages = PdfTextExtractor().extract(storage_root() / artifact.storage_path).pages
-        result = parse_mos_text("\n".join(page.text for page in pages))
+        result = parse_mos_pages(pages)
         try:
             document, created = materialize_mos(
                 session, target_build, version, artifact, result

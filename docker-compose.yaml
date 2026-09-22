@@ -20,15 +20,25 @@ services:
       PYTHONPATH: /app
       ESOCIAL_DATABASE_URL: postgresql+psycopg://esocial:esocial@db:5432/esocial
       ESOCIAL_TEST_DATABASE_URL: postgresql+psycopg://esocial:esocial@db:5432/esocial_test
+      ESOCIAL_TEST_CORPUS_STORAGE_PATH: /app/data/test-corpus
       ESOCIAL_LLM_MODEL: gemma4:12b
       ESOCIAL_OLLAMA_BASE_URL: http://ollama:11434
       ESOCIAL_OLLAMA_HOST_URL: http://localhost:${ESOCIAL_OLLAMA_HOST_PORT:-11436}
     volumes:
       - .:/app
       - corpus_data:/app/data/corpus
+      - test_corpus_data:/app/data/test-corpus
     depends_on:
       db:
         condition: service_healthy
+      test-storage-init:
+        condition: service_completed_successfully
+  test-storage-init:
+    image: alpine:3.20
+    user: "0:0"
+    command: ["sh", "-c", "chown -R 1000:1000 /test-corpus"]
+    volumes:
+      - test_corpus_data:/test-corpus
   ollama:
     image: ollama/ollama:latest
     profiles: [llm]
@@ -43,4 +53,5 @@ services:
 volumes:
   postgres_data:
   corpus_data:
+  test_corpus_data:
   ollama_data:

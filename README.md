@@ -724,6 +724,11 @@ Execute toda a suíte:
 docker compose exec app uv run pytest
 ```
 
+Os testes PostgreSQL sempre selecionam `esocial_test` por
+`ESOCIAL_ENVIRONMENT=test`; o banco `esocial` e o volume `corpus_data` não são
+alvos de bootstrap, migration ou limpeza da suíte. Os artefatos de fixture usam
+o volume independente `test_corpus_data` em `/app/data/test-corpus`.
+
 Estado validado após a Fase 9A:
 
 ```text
@@ -1006,6 +1011,42 @@ manifesto final estão em [`docs/mvp_final_validation.md`](docs/mvp_final_valida
 e [`evaluation/mvp/mvp_v1_manifest.json`](evaluation/mvp/mvp_v1_manifest.json).
 O status não representa certificação jurídica, release de produção ou revisão
 humana concluída; esta permanece `NOT_REVIEWED`. A Fase 11 não foi iniciada.
+
+## Uso normal pós-MVP
+
+A experiência operacional começa com um único comando, executado na raiz do
+clone:
+
+```text
+./esocial
+```
+
+O launcher verifica Docker/Compose, sobe os serviços, aguarda o PostgreSQL,
+aplica as migrations e abre o onboarding ou o runtime ativo. Python, `uv` e
+dependências não são necessários no host.
+
+No primeiro uso, o sistema solicita somente três fontes oficiais: URL do MOS,
+URL do pacote XSD e URL da página principal do Leiaute. Os anexos I e II são
+descobertos deterministicamente a partir da página; roles, hashes, snapshot,
+build, parser revision e profile de busca são internos.
+
+Quando já existe uma versão ativa, o sistema mostra o status e pergunta se o
+usuário deseja importar uma nova versão. A decisão é manual e orientada por
+URLs; não há monitoramento automático do gov.br. `N` não faz downloads nem
+mutações. Uma atualização só troca o runtime ativo depois de download,
+validação, freeze, parsing, facts e índice de busca concluídos; falhas mantêm a
+versão anterior ativa.
+
+Consulte [`docs/operational_ux.md`](docs/operational_ux.md) para a máquina de
+estados e a recuperação de interrupções.
+
+## Administração avançada / diagnóstico
+
+Os comandos `esocial corpus`, `esocial build`, `esocial mos`, `esocial layout`,
+`esocial xsd`, `esocial facts`, `esocial search`, `esocial evidence`,
+`esocial answer` e `esocial complete` continuam disponíveis para desenvolvimento,
+auditoria e diagnóstico. Eles podem exigir IDs e configurações internas e não
+são necessários no fluxo normal.
 
 ## Fase 9B — agregação determinística cross-source
 

@@ -1,5 +1,7 @@
 import zipfile
 
+import pytest
+
 from rag_esocial.xsd_parser import parse_xsd_package
 
 
@@ -26,3 +28,22 @@ def test_xsd_parser_preserves_named_structure_facets_and_auxiliary(tmp_path):
     ]
     assert any(item.kind == "AUXILIARY_SCHEMA" for item in results)
     assert any(item.kind == "SHARED_TYPES_SCHEMA" for item in results)
+
+
+def test_xsd_parser_rejects_active_but_not_commented_external_declarations(tmp_path):
+    package = tmp_path / "package.zip"
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr(
+            "commented.xsd",
+            "<!-- <!DOCTYPE schema SYSTEM 'https://example.test/schema.dtd'> -->"
+            "<xs:schema xmlns:xs='http://www.w3.org/2001/XMLSchema'/>",
+        )
+    assert len(parse_xsd_package(package)) == 1
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr(
+            "active.xsd",
+            "<!DOCTYPE schema SYSTEM 'https://example.test/schema.dtd'>"
+            "<xs:schema xmlns:xs='http://www.w3.org/2001/XMLSchema'/>",
+        )
+    with pytest.raises(ValueError, match="external XML declaration rejected"):
+        parse_xsd_package(package)

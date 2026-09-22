@@ -7,8 +7,14 @@
 - Não escolher embedding, reranker ou chunking sem fase e medição correspondentes.
 - Futuras respostas devem ser exclusivamente baseadas em evidência autorizada.
 - Preservar proveniência e auditabilidade.
+- A experiência externa normal é `./esocial`; IDs, roles e revisões permanecem
+  somente na interface avançada/diagnóstica.
 - Atualizar README ao fim de fases que alterem estado, funcionalidades ou roadmap.
 - Não fazer commit, push ou tag.
+- Todo teste PostgreSQL deve exigir `ESOCIAL_ENVIRONMENT=test`, conectar-se somente a
+  `esocial_test` e falhar fechado antes de qualquer operação destrutiva.
+- A descoberta dos Anexos do Leiaute permanece determinística e fail-closed:
+  sem LLM ou URLs de versão hardcoded, deduplicando fragments antes da ambiguidade.
 - `CorpusSnapshot` é diferente de `CorpusBuild`; build real exige snapshot congelado.
 - `CitationTarget` é diferente de `CanonicalEntity`; CitationIdentity não inclui build ou snapshot.
 - Nunca usar página, linha ou índice posicional como identidade estável de citação.
