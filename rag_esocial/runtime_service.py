@@ -2,39 +2,71 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from .identity import parser_config_digest
 from .models.build import CorpusBuild
 from .models.corpus import CorpusSnapshot
-from .models.layout import LayoutDocument
-from .models.mos import MosDocument
+from .models.layout import LayoutDocument, LayoutEvent, LayoutField, LayoutGroup
+from .models.mos import MosDocument, MosEventSection
 from .models.runtime import ActiveRuntime
 from .models.search import SearchProjection
-from .models.xsd import XsdPackageDocument
+from .models.xsd import XsdEventSchema, XsdPackageDocument
 from .runtime_defaults import (
     DEFAULT_PARSER_REVISION,
     DEFAULT_SEARCH_CONFIG,
     DEFAULT_SEARCH_REVISION,
     RUNTIME_KEY,
 )
+from .search_service import projection_complete
 
 
 def required_materialization_counts(session, build: CorpusBuild) -> dict[str, int]:
+    layout = session.scalar(
+        select(func.count(LayoutField.id))
+        .join(LayoutGroup)
+        .join(LayoutEvent)
+        .join(LayoutDocument)
+        .where(LayoutDocument.corpus_build_id == build.id)
+    )
+    layout_groups = session.scalar(
+        select(func.count(LayoutGroup.id))
+        .join(LayoutEvent)
+        .join(LayoutDocument)
+        .where(LayoutDocument.corpus_build_id == build.id)
+    )
+    layout_events = session.scalar(
+        select(func.count(LayoutEvent.id))
+        .join(LayoutDocument)
+        .where(LayoutDocument.corpus_build_id == build.id)
+    )
+    mos_events = session.scalar(
+        select(func.count(MosEventSection.id))
+        .join(MosDocument)
+        .where(MosDocument.corpus_build_id == build.id)
+    )
+    xsd_events = session.scalar(
+        select(func.count(XsdEventSchema.id))
+        .join(XsdPackageDocument)
+        .where(XsdPackageDocument.corpus_build_id == build.id)
+    )
     return {
-        "mos": session.scalar(
+        "mos": bool(mos_events)
+        and session.scalar(
             select(MosDocument.id)
             .where(MosDocument.corpus_build_id == build.id)
             .limit(1)
         )
         is not None,
-        "layout": session.scalar(
+        "layout": bool(layout and layout_groups and layout_events)
+        and session.scalar(
             select(LayoutDocument.id)
             .where(LayoutDocument.corpus_build_id == build.id)
             .limit(1)
         )
         is not None,
-        "xsd": session.scalar(
+        "xsd": bool(xsd_events)
+        and session.scalar(
             select(XsdPackageDocument.id)
             .where(XsdPackageDocument.corpus_build_id == build.id)
             .limit(1)
@@ -44,7 +76,7 @@ def required_materialization_counts(session, build: CorpusBuild) -> dict[str, in
 
 
 def ready_projection(session, build: CorpusBuild, profile: str):
-    return session.scalar(
+    projection = session.scalar(
         select(SearchProjection).where(
             SearchProjection.corpus_build_id == build.id,
             SearchProjection.profile == profile,
@@ -52,6 +84,11 @@ def ready_projection(session, build: CorpusBuild, profile: str):
             SearchProjection.projection_config_digest
             == parser_config_digest(DEFAULT_SEARCH_CONFIG),
         )
+    )
+    return (
+        projection
+        if projection and projection_complete(session, build, projection)
+        else None
     )
 
 

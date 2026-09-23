@@ -45,6 +45,7 @@ from .evaluation_service import (
     evaluate_retrieval_evidence,
     write_report,
 )
+from .evidence_service import _render as render_structural_evidence
 from .evidence_service import assemble_evidence
 from .fact_resolution_service import requested_fact, resolve_requested_fact
 from .facts_service import build_facts
@@ -58,7 +59,7 @@ from .models.answer import (
     AnswerRequest,
     AnswerRun,
 )
-from .models.build import CorpusBuild
+from .models.build import CitationTarget, CorpusBuild, CorpusBuildCitationTarget
 from .models.corpus import (
     CorpusSnapshot,
     DocumentArtifact,
@@ -81,11 +82,17 @@ from .models.xsd import (
 from .mos_materializer import materialize_mos
 from .mos_parser import parse_mos_pages
 from .mvp_validation_service import validate_mvp_artifacts, write_mvp_manifest
+from .operational_query import analyze_query
 from .pdf_text import PdfTextExtractor
 from .q14_service import DeterministicQ14Client, evaluate_q14, validate_q14
 from .runtime_defaults import DEFAULT_SEARCH_PROFILE
-from .runtime_service import active_runtime_summary, get_active_runtime
-from .search_service import materialize_projection, search
+from .runtime_service import (
+    active_runtime_summary,
+    get_active_runtime,
+    is_build_ready,
+    ready_projection,
+)
+from .search_service import PROFILES, materialize_projection, search
 from .setup_service import SetupError, prepare_runtime
 from .synthesis_service import OllamaSynthesisModelClient
 from .xsd_materializer import parse_and_materialize_xsd
@@ -186,6 +193,7 @@ def _prepare_with_progress(urls: SourceInput | None = None) -> None:
         "Processando XSD": "[7/9] Processando XSD",
         "Construindo fatos": "[8/9] Construindo fatos",
         "Construindo índice de busca": "[9/9] Construindo índice de busca",
+        "Atualizando índice de busca": "Atualizando índice de busca local",
     }
     with session_factory()() as session:
         result = prepare_runtime(
@@ -212,35 +220,70 @@ def _query_active(profile: str = DEFAULT_SEARCH_PROFILE) -> None:
         if not runtime:
             console.print("O sistema ainda não está pronto para consultas.")
             return
-        projection = runtime.projection
-        if projection.profile != profile:
-            projection = session.scalar(
-                select(SearchProjection).where(
-                    SearchProjection.corpus_build_id == runtime.corpus_build_id,
-                    SearchProjection.profile == profile,
-                )
+        intent = analyze_query(question)
+        profiles = (
+            tuple(
+                f"{family}_ALL"
+                for family in (intent.requested_families or ("MOS", "LAYOUT", "XSD"))
             )
-        rows = search(session, projection, question, limit=5) if projection else []
-    if not rows:
-        console.print("Nenhuma evidência autorizada foi encontrada.")
-        return
-    console.print("Evidências encontradas:")
-    for index, row in enumerate(rows, start=1):
-        title = row.get("title") or row["source_local_stable_path"]
-        console.print(f"{index}. {title} — {row['source_local_stable_path']}")
+            if profile == "CROSS_SOURCE"
+            else (profile,)
+        )
+        factual_query = (
+            intent.normalized_text if profile == "CROSS_SOURCE" else question
+        )
+        results = []
+        for selected in profiles:
+            projection = ready_projection(session, runtime.build, selected)
+            hits = (
+                search(session, projection, factual_query, limit=5)
+                if projection
+                else []
+            )
+            rendered = []
+            for hit in hits:
+                target = session.get(CitationTarget, hit["root_citation_target_id"])
+                if not target or not session.get(
+                    CorpusBuildCitationTarget, (runtime.corpus_build_id, target.id)
+                ):
+                    raise ValueError("retrieved target is not authorized by build")
+                rendered.append(
+                    (hit, render_structural_evidence(session, runtime.build, target))
+                )
+            results.append((selected.removesuffix("_ALL"), rendered))
+    if not any(rows for _, rows in results):
+        console.print("Abstenção: nenhuma evidência autorizada foi encontrada.")
+        if profile != "CROSS_SOURCE":
+            return
+    console.print("Evidências autorizadas (sem síntese factual):")
+    for family, rows in results:
+        console.print(f"{family}: {'AVAILABLE' if rows else 'NO_AUTHORIZED_EVIDENCE'}")
+        for index, (row, content) in enumerate(rows, start=1):
+            console.print(
+                f"{index}. [{row['unit_kind']}] {row['source_local_stable_path']} "
+                f"(score={row['score']:.4f})"
+            )
+            console.print(content[:1200])
 
 
 def _main_menu() -> None:
     while True:
         console.print(
-            "\n1. MOS\n2. Leiaute\n3. XSD\n4. Consulta Completa\n"
+            "\n1. MOS\n2. Leiaute\n3. XSD\n4. Evidências cross-source\n"
             "5. Importar nova versão\n6. Status\n0. Sair"
         )
         choice = typer.prompt("Escolha", default="0").strip()
         if choice == "0":
             return
         if choice in {"1", "2", "3", "4"}:
-            _query_active()
+            _query_active(
+                {
+                    "1": "MOS_ALL",
+                    "2": "LAYOUT_ALL",
+                    "3": "XSD_ALL",
+                    "4": "CROSS_SOURCE",
+                }[choice]
+            )
             continue
         if choice == "6":
             _normal_runtime_status()
@@ -267,7 +310,25 @@ def _main_menu() -> None:
 def operator_run() -> None:
     """Inicializa/resume o runtime e abre a experiência interativa."""
     with session_factory()() as session:
-        has_active = get_active_runtime(session) is not None
+        runtime = get_active_runtime(session)
+        has_active = runtime is not None
+        internal_update = has_active and not is_build_ready(
+            session, runtime.build, tuple(PROFILES)
+        )
+    if internal_update:
+        console.print(
+            "Atualizando estrutura local do corpus (sem baixar fontes oficiais)..."
+        )
+        try:
+            _prepare_with_progress()
+        except Exception as error:
+            _operator_failure(
+                "Atualização interna falhou; runtime anterior preservado", error
+            )
+            raise typer.Exit(code=1) from error
+        _normal_runtime_status()
+        _main_menu()
+        return
     if has_active:
         _normal_runtime_status()
         if typer.confirm(

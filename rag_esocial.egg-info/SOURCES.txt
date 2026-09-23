@@ -23,6 +23,8 @@ rag_esocial/logging_config.py
 rag_esocial/mos_materializer.py
 rag_esocial/mos_parser.py
 rag_esocial/mvp_validation_service.py
+rag_esocial/operational_query.py
+rag_esocial/operational_retrieval.py
 rag_esocial/pdf_text.py
 rag_esocial/q14_service.py
 rag_esocial/runtime_defaults.py
@@ -63,11 +65,14 @@ tests/test_config.py
 tests/test_corpus.py
 tests/test_facts_identity.py
 tests/test_identity.py
+tests/test_layout_official_hotfix.py
 tests/test_layout_parser.py
 tests/test_mos_integration.py
 tests/test_mos_parser.py
 tests/test_mvp_validation.py
+tests/test_operational_retrieval_v3.py
 tests/test_operational_runtime.py
 tests/test_pdf_text.py
+tests/test_runtime_hotfix_postgres.py
 tests/test_test_isolation.py
 tests/test_xsd_parser.py

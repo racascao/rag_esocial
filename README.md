@@ -11,6 +11,13 @@ O projeto trabalha atualmente com três famílias documentais:
 - **Leiautes** — estrutura formal de eventos, grupos, campos, regras e referências;
 - **XSD** — schemas XML e suas restrições estruturais.
 
+O parser `parser-suite-v2` interpreta as tabelas oficiais do Leiaute; o índice
+operacional `fts-baseline-v3` acrescenta atributos rotulados, escopo por evento
+e navegação estrutural de filhos. Uma mudança apenas de índice cria projections
+v3 no **mesmo CorpusBuild v2** e no mesmo snapshot congelado, sem reparse nem
+novas URLs. A troca do runtime ocorre só após readiness; os testes não alteram
+o banco de produção.
+
 Diferentemente de um chatbot convencional, o modelo de linguagem **não é tratado como fonte de conhecimento**. O LLM só pode gerar respostas a partir de fatos previamente resolvidos e evidências explicitamente autorizadas pelo pipeline.
 
 Se não houver suporte suficiente:
@@ -729,10 +736,10 @@ Os testes PostgreSQL sempre selecionam `esocial_test` por
 alvos de bootstrap, migration ou limpeza da suíte. Os artefatos de fixture usam
 o volume independente `test_corpus_data` em `/app/data/test-corpus`.
 
-Estado validado após a Fase 9A:
+Estado validado após o hotfix de retrieval v3:
 
 ```text
-56 passed
+134 passed
 0 skipped
 0 xfailed
 ```
@@ -1002,6 +1009,8 @@ Fase 9C  COMPLETE
 Fase 9D  COMPLETE
 Fase 9E  COMPLETE
 Fase 10  COMPLETE
+Hotfix parser/search v2  VALIDADO no corpus real
+Hotfix retrieval/search v3  IMPLEMENTADO (reindex real pelo usuário pendente)
 ```
 
 ## MVP final — Fase 10 COMPLETE
@@ -1033,9 +1042,29 @@ build, parser revision e profile de busca são internos.
 Quando já existe uma versão ativa, o sistema mostra o status e pergunta se o
 usuário deseja importar uma nova versão. A decisão é manual e orientada por
 URLs; não há monitoramento automático do gov.br. `N` não faz downloads nem
-mutações. Uma atualização só troca o runtime ativo depois de download,
+mutações quando a revisão interna já está atual. Se só o índice está antigo,
+o launcher cria projections novas no **mesmo build**, sem HTTP, download ou
+reparse. Uma mudança de parser exige build novo sobre o mesmo snapshot; nenhum
+dos casos representa nova versão oficial do eSocial. Uma atualização de
+fontes só troca o runtime ativo depois de download,
 validação, freeze, parsing, facts e índice de busca concluídos; falhas mantêm a
 versão anterior ativa.
+
+O menu operacional roteia MOS, Leiaute e XSD para projections próprias por
+família. A quarta opção é coleta lexical de evidências cross-source; ela não
+executa o contrato Complete estruturado nem gera síntese livre. A regressão
+`DEV-MOS-001` garante que “qual é o conceito do evento S-1000?” recupera a
+metadata específica `MOS/CapIII/S-1000/metadata/conceito`, não apenas a seção
+genérica do evento. Materialização Leiaute vazia e projection incompleta não
+passam readiness.
+
+O retrieval v3 analisa códigos S-XXXX, nomes técnicos, atributos do schema e
+relações pai/filho deterministicamente. Pertencimento estrutural ao evento e ao
+path precede menção textual; `top_k` é limite máximo, não cota a preencher com
+outros eventos. A opção cross-source remove termos de orquestração, consulta
+cada família separadamente e mostra `AVAILABLE`/`NO_AUTHORIZED_EVIDENCE`, sem
+produzir conclusão factual. Não há fine-tuning, embeddings ou reescrita por LLM.
+Consulte [`docs/operational_retrieval_v3.md`](docs/operational_retrieval_v3.md).
 
 Consulte [`docs/operational_ux.md`](docs/operational_ux.md) para a máquina de
 estados e a recuperação de interrupções.

@@ -60,6 +60,7 @@ from .runtime_service import (
     get_active_runtime,
     is_build_ready,
     ready_projection,
+    required_materialization_counts,
 )
 from .search_service import PROFILES, materialize_projection
 from .xsd_materializer import parse_and_materialize_xsd
@@ -226,6 +227,22 @@ def materialize_build(session, build: CorpusBuild, progress=None) -> CorpusBuild
     if not snapshot or not snapshot.frozen_at:
         raise SetupError("o build exige um snapshot congelado")
 
+    if build.status == "COMPLETE" and all(
+        required_materialization_counts(session, build).values()
+    ):
+        if progress:
+            progress("Atualizando índice de busca")
+        for profile in PROFILES:
+            materialize_projection(
+                session,
+                build,
+                profile,
+                revision=DEFAULT_SEARCH_REVISION,
+                config=dict(DEFAULT_SEARCH_CONFIG),
+            )
+            session.commit()
+        return build
+
     def step(label):
         if progress:
             progress(label)
@@ -289,6 +306,13 @@ def materialize_build(session, build: CorpusBuild, progress=None) -> CorpusBuild
 
 
 def _candidate_snapshot(session) -> CorpusSnapshot | None:
+    active = get_active_runtime(session)
+    if (
+        active
+        and active.build.snapshot.frozen_at
+        and not verify_snapshot(active.build.snapshot)
+    ):
+        return active.build.snapshot
     snapshots = list(_valid_frozen_snapshots(session))
     snapshots.sort(key=lambda item: item.created_at, reverse=True)
     for snapshot in snapshots:
@@ -329,7 +353,11 @@ def prepare_runtime(
     if projection is None:
         raise SetupError("projeção padrão não encontrada")
     current = get_active_runtime(session)
-    if current and current.corpus_build_id == build.id:
+    if (
+        current
+        and current.corpus_build_id == build.id
+        and current.search_projection_id == projection.id
+    ):
         session.commit()
         return {
             "snapshot": snapshot,

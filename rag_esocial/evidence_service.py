@@ -9,8 +9,21 @@ from .identity import parser_config_digest
 from .models.build import CitationTarget, CorpusBuildCitationTarget
 from .models.evidence import EvidenceSet, EvidenceSetItem, EvidenceUnit
 from .models.layout import LayoutDocument, LayoutEvent, LayoutField, LayoutGroup
-from .models.mos import MosDocument, MosEventSection, MosEventSubitem, MosTopic
-from .models.xsd import XsdElement, XsdEventSchema, XsdPackageDocument, XsdSharedType
+from .models.mos import (
+    EventMetadataBlock,
+    MosDocument,
+    MosEventSection,
+    MosEventSubitem,
+    MosEventTopic,
+    MosTopic,
+)
+from .models.xsd import (
+    XsdElement,
+    XsdEnumeration,
+    XsdEventSchema,
+    XsdPackageDocument,
+    XsdSharedType,
+)
 
 
 def _digest(value):
@@ -31,7 +44,7 @@ def _render(session, build, target):
             )
         )
         if field:
-            return f"Path: {path}\nName: {field.technical_name}\nDescription: {field.description or ''}\nType: {field.field_type or ''}\nOccurrence: {field.occurrence or ''}\nSize: {field.size or ''}\nCondition: {field.condition or ''}"
+            return f"Path: {path}\nName: {field.technical_name}\nDescription: {field.description or ''}\nType: {field.field_type or ''}\nOccurrence: {field.occurrence or ''}\nSize: {field.size or ''}\nDecimals: {field.decimals or ''}\nCondition: {field.condition or ''}"
         group = session.scalar(
             select(LayoutGroup)
             .join(LayoutEvent)
@@ -63,7 +76,12 @@ def _render(session, build, target):
             )
         )
         if element:
-            return f"Path: {path}\nElement: {element.name}\nType: {element.type_qname or ''}\nRef: {element.ref_qname or ''}\nminOccurs: {element.min_occurs or ''}\nmaxOccurs: {element.max_occurs or ''}\nDocumentation: {element.documentation or ''}\nFacets: {element.facets or {}}"
+            enumerations = session.scalars(
+                select(XsdEnumeration.value).where(
+                    XsdEnumeration.owner_element_id == element.id
+                )
+            ).all()
+            return f"Path: {path}\nElement: {element.name}\nType: {element.type_qname or ''}\nRef: {element.ref_qname or ''}\nminOccurs: {element.min_occurs or ''}\nmaxOccurs: {element.max_occurs or ''}\nDocumentation: {element.documentation or ''}\nFacets: {element.facets or {}}\nEnumerations: {', '.join(enumerations)}"
         shared = session.scalar(
             select(XsdSharedType)
             .join(XsdPackageDocument)
@@ -94,6 +112,28 @@ def _render(session, build, target):
     )
     if event:
         return f"Event: {event.event_code}\nTitle: {event.title}"
+    metadata = session.scalar(
+        select(EventMetadataBlock)
+        .join(MosEventSection)
+        .join(MosDocument)
+        .where(
+            MosDocument.corpus_build_id == build.id,
+            EventMetadataBlock.source_local_stable_path == path,
+        )
+    )
+    if metadata:
+        return f"Metadata: {metadata.original_label}\nContent: {metadata.content}"
+    event_topic = session.scalar(
+        select(MosEventTopic)
+        .join(MosEventSection)
+        .join(MosDocument)
+        .where(
+            MosDocument.corpus_build_id == build.id,
+            MosEventTopic.source_local_stable_path == path,
+        )
+    )
+    if event_topic:
+        return f"Event topic: {event_topic.number} {event_topic.title or ''}"
     topic = session.scalar(
         select(MosTopic)
         .join(MosDocument)

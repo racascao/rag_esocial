@@ -38,8 +38,14 @@ queries legítimas e valida física e semanticamente cada documento destino;
 falta ou ambiguidade encerra a tentativa sem adivinhação nem persistência.
 
 Os defaults internos são versionados em `runtime_defaults.py`: parser
-`parser-suite-v1`, busca `fts-baseline-v1` e profile padrão `LAYOUT_FIELD`.
+`parser-suite-v2`, busca `fts-baseline-v3` e profile padrão `LAYOUT_ALL`.
 Eles não aparecem como perguntas do onboarding.
+
+Se apenas a search revision está desatualizada, o launcher materializa
+projections v3 no mesmo build e snapshot, sem parser, facts, HTTP ou novas URLs.
+Uma parser revision diferente continua exigindo build novo. O runtime anterior
+e sua geração permanecem intactos até o readiness integral; só então ocorre
+troca atômica. Uma falha preserva o runtime anterior.
 
 Se os hashes já corresponderem a um snapshot congelado, a cadeia é reutilizada
 e nenhuma nova versão é criada. Se forem diferentes, a nova cadeia preserva a
@@ -48,6 +54,12 @@ longa; somente a troca final do runtime é uma transação curta.
 
 ## Diagnóstico
 
-O menu mostra MOS, Leiaute, XSD, consulta, importação de nova versão e status.
+O menu usa `MOS_ALL`, `LAYOUT_ALL` e `XSD_ALL` nas três escolhas de família.
+A opção 4 mostra evidências cross-source, sem alegar execução do Answer Contract
+Complete estruturado. Projeções granulares permanecem para diagnóstico e
+benchmarks. Perguntas naturais são analisadas lexicalmente; escopo por evento,
+identidade técnica, atributos e relações pai/filho precedem a menção textual.
+O índice artificial não é exibido como se fosse conteúdo oficial. A opção 4
+mostra status de evidência separado por família. Zero hits produzem abstenção.
 Detalhes de UUID, manifest, build digest e parser revision continuam nos
 comandos administrativos/diagnósticos, não no caminho normal.

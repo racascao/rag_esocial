@@ -167,7 +167,9 @@ from rag_esocial.xsd_materializer import materialize_xsd
 from rag_esocial.xsd_parser import parse_xsd_package
 
 
-def make_integration_pdf(path: Path) -> None:
+def make_integration_pdf(
+    path: Path, event_code: str = "S-9999", subject: str | None = None
+) -> None:
     writer = PdfWriter()
     page = writer.add_blank_page(width=600, height=800)
     font = DictionaryObject(
@@ -186,9 +188,9 @@ def make_integration_pdf(path: Path) -> None:
     )
     lines = [
         "CAP III",
-        "S-9999 Evento de Teste",
+        f"{event_code} Evento de Teste",
         "Conceito",
-        "Consultar S-1210 {ideDmDev}",
+        f"Consultar {subject or 'S-1210 {ideDmDev}'}",
         "Quem esta obrigado",
         "Empregadores.",
         "Prazo de envio",
@@ -216,9 +218,15 @@ def count_rows(session, model) -> int:
     return session.scalar(select(func.count()).select_from(model)) or 0
 
 
-def build_fixture(tmp_path: Path):
+def build_fixture(
+    tmp_path: Path,
+    event_code: str = "S-9999",
+    layout_html: str | None = None,
+    extra_xsd_members: dict[str, str] | None = None,
+    mos_subject: str | None = None,
+):
     mos_pdf = tmp_path / "mos-fixture.pdf"
-    make_integration_pdf(mos_pdf)
+    make_integration_pdf(mos_pdf, event_code, mos_subject)
     payloads = {
         ArtifactRole.MOS_MAIN.value: mos_pdf,
         ArtifactRole.LAYOUT_MAIN.value: tmp_path / "layout.html",
@@ -226,7 +234,8 @@ def build_fixture(tmp_path: Path):
         ArtifactRole.LAYOUT_ANNEX_II_VALIDATION_RULES.value: tmp_path / "annex-ii.txt",
     }
     payloads[ArtifactRole.LAYOUT_MAIN.value].write_text(
-        """<section data-kind='event' code='S-9999' title='Evento Layout Fixture'>
+        layout_html
+        or """<section data-kind='event' code='S-9999' title='Evento Layout Fixture'>
 <div data-kind='group' name='info' level='1' description='Grupo raiz'>
 <div data-kind='group' name='dados' level='2' description='Grupo aninhado'>
 <div data-kind='group' name='detalhe' level='3'>
@@ -261,6 +270,8 @@ condition='REGRA_LAYOUT'>Descrição REGRA_LAYOUT e Tabela 05</p>
             "xmldsig-core-schema.xsd",
             "<xs:schema xmlns:xs='http://www.w3.org/2001/XMLSchema'/>",
         )
+        for name, content in (extra_xsd_members or {}).items():
+            archive.writestr(name, content)
     payloads[ArtifactRole.XSD_PACKAGE.value] = xsd_path
 
     session = session_factory()()

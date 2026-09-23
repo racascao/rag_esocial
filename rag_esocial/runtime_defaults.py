@@ -1,9 +1,9 @@
 """Defaults controlled by the application, not by the normal user flow."""
 
-DEFAULT_PARSER_REVISION = "parser-suite-v1"
+DEFAULT_PARSER_REVISION = "parser-suite-v2"
 DEFAULT_PARSER_CONFIG = {"suite": "mos-layout-xsd", "revision": DEFAULT_PARSER_REVISION}
-DEFAULT_SEARCH_PROFILE = "LAYOUT_FIELD"
-DEFAULT_SEARCH_REVISION = "fts-baseline-v1"
+DEFAULT_SEARCH_PROFILE = "LAYOUT_ALL"
+DEFAULT_SEARCH_REVISION = "fts-baseline-v3"
 DEFAULT_SEARCH_CONFIG = {}
 DEFAULT_TOP_K = 5
 RUNTIME_KEY = "default"
