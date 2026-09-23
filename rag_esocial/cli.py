@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.table import Table
 from sqlalchemy import func, select
 
-from . import __version__
+from . import __version__, presentation
 from .acquisition_service import SourceInput
 from .answer_service import (
     OllamaAnswerModelClient,
@@ -163,22 +163,37 @@ def db_status() -> None:
 def _normal_runtime_status() -> None:
     with session_factory()() as session:
         summary = active_runtime_summary(session)
-    if not summary:
-        console.print("Sistema: preparação necessária")
-        return
-    console.print("Sistema: pronto")
-    for role, label in (
-        ("MOS_MAIN", "MOS"),
-        ("LAYOUT_MAIN", "Leiaute"),
-        ("XSD_PACKAGE", "XSD"),
-    ):
-        console.print(f"{label}: {summary['versions'].get(role, 'indisponível')}")
-    console.print("Corpus: ativo")
+    console.print(presentation.header(summary))
+
+
+def _detailed_runtime_status() -> None:
+    with session_factory()() as session:
+        summary = active_runtime_summary(session)
+        runtime = get_active_runtime(session)
+        details = None
+        if runtime:
+            snapshot = runtime.build.snapshot
+            details = {
+                "build_id": runtime.corpus_build_id,
+                "search_revision": runtime.projection.projection_revision,
+                "corpus_status": (
+                    "Ativo" if runtime.build.status == "COMPLETE" else "Em preparação"
+                ),
+                "snapshot_id": snapshot.id,
+                "snapshot_status": "Congelado" if snapshot.frozen_at else "Rascunho",
+                "artifact_count": len(snapshot.members),
+            }
+    console.print(presentation.status(summary, details))
 
 
 def _ask_source_urls() -> SourceInput:
-    console.print("Nenhum artefato do eSocial foi importado.")
-    console.print("Para preparar o sistema, informe as três fontes oficiais.")
+    console.print(
+        presentation.warning(
+            "Primeira preparação",
+            "Informe as URLs oficiais do MOS, pacote XSD e Leiaute principal. "
+            "Os Anexos I e II serão descobertos automaticamente.",
+        )
+    )
     return SourceInput(
         mos_url=typer.prompt("URL do MOS"),
         xsd_url=typer.prompt("URL do pacote XSD"),
@@ -188,37 +203,45 @@ def _ask_source_urls() -> SourceInput:
 
 def _prepare_with_progress(urls: SourceInput | None = None) -> None:
     labels = {
-        "Processando MOS": "[7/9] Processando MOS",
-        "Processando Leiaute": "[7/9] Processando Leiaute",
-        "Processando XSD": "[7/9] Processando XSD",
-        "Construindo fatos": "[8/9] Construindo fatos",
-        "Construindo índice de busca": "[9/9] Construindo índice de busca",
+        "Processando MOS": "Processando MOS",
+        "Processando Leiaute": "Processando Leiaute",
+        "Processando XSD": "Processando XSD",
+        "Construindo fatos": "Construindo fatos",
+        "Construindo índice de busca": "Construindo índice de busca",
         "Atualizando índice de busca": "Atualizando índice de busca local",
     }
     with session_factory()() as session:
         result = prepare_runtime(
             session,
             urls=urls,
-            progress=lambda label: console.print(labels.get(label, label)),
+            progress=lambda label: console.print(
+                presentation.stage(labels.get(label, label))
+            ),
         )
     if result.get("same_version"):
-        console.print("Nenhuma nova versão foi detectada.")
+        console.print(presentation.success("Nenhuma nova versão foi detectada."))
         return
-    console.print("[1/1] Versão ativa e pronta para consultas.")
+    console.print(presentation.success("Versão ativa e pronta para consultas."))
 
 
 def _operator_failure(prefix: str, error: Exception) -> None:
-    console.print(f"{prefix}: {error}")
+    console.print(presentation.error("Falha operacional", f"{prefix}: {error}"))
     if os.getenv("ESOCIAL_DEBUG") == "1":
         console.print_exception()
 
 
 def _query_active(profile: str = DEFAULT_SEARCH_PROFILE) -> None:
-    question = typer.prompt("Consulta")
+    console.print(presentation.query_intro(profile))
+    question = typer.prompt("Pergunta")
     with session_factory()() as session:
         runtime = get_active_runtime(session)
         if not runtime:
-            console.print("O sistema ainda não está pronto para consultas.")
+            console.print(
+                presentation.warning(
+                    "Preparação necessária",
+                    "O sistema ainda não está pronto para consultas.",
+                )
+            )
             return
         intent = analyze_query(question)
         profiles = (
@@ -251,27 +274,33 @@ def _query_active(profile: str = DEFAULT_SEARCH_PROFILE) -> None:
                     (hit, render_structural_evidence(session, runtime.build, target))
                 )
             results.append((selected.removesuffix("_ALL"), rendered))
-    if not any(rows for _, rows in results):
-        console.print("Abstenção: nenhuma evidência autorizada foi encontrada.")
-        if profile != "CROSS_SOURCE":
-            return
-    console.print("Evidências autorizadas (sem síntese factual):")
-    for family, rows in results:
-        console.print(f"{family}: {'AVAILABLE' if rows else 'NO_AUTHORIZED_EVIDENCE'}")
-        for index, (row, content) in enumerate(rows, start=1):
+    if profile == "CROSS_SOURCE":
+        for family, rows in results:
+            console.print(presentation.source_block(family, rows))
+        if not any(rows for _, rows in results):
             console.print(
-                f"{index}. [{row['unit_kind']}] {row['source_local_stable_path']} "
-                f"(score={row['score']:.4f})"
+                presentation.warning(
+                    "Nenhuma evidência encontrada",
+                    "Nenhuma fonte retornou evidência autorizada para esta consulta.",
+                )
             )
-            console.print(content[:1200])
+        return
+    rows = results[0][1]
+    if not rows:
+        console.print(
+            presentation.warning(
+                "Nenhuma evidência encontrada",
+                "Não foram encontradas evidências autorizadas nesta fonte.",
+            )
+        )
+        return
+    for index, (row, content) in enumerate(rows, start=1):
+        console.print(presentation.evidence(row, content, index))
 
 
 def _main_menu() -> None:
     while True:
-        console.print(
-            "\n1. MOS\n2. Leiaute\n3. XSD\n4. Evidências cross-source\n"
-            "5. Importar nova versão\n6. Status\n0. Sair"
-        )
+        console.print(presentation.menu())
         choice = typer.prompt("Escolha", default="0").strip()
         if choice == "0":
             return
@@ -286,13 +315,13 @@ def _main_menu() -> None:
             )
             continue
         if choice == "6":
-            _normal_runtime_status()
+            _detailed_runtime_status()
             continue
         if choice == "5":
             if not typer.confirm(
                 "Existe uma nova versão do eSocial e deseja importá-la?", default=False
             ):
-                console.print("Versão ativa preservada.")
+                console.print(presentation.success("Versão ativa preservada."))
                 continue
             try:
                 _prepare_with_progress(_ask_source_urls())
@@ -303,7 +332,11 @@ def _main_menu() -> None:
                     error,
                 )
             continue
-        console.print("Escolha uma opção do menu.")
+        console.print(
+            presentation.warning(
+                "Opção inválida", "Escolha um número apresentado no menu."
+            )
+        )
 
 
 @operator_app.command("run")
@@ -317,7 +350,9 @@ def operator_run() -> None:
         )
     if internal_update:
         console.print(
-            "Atualizando estrutura local do corpus (sem baixar fontes oficiais)..."
+            presentation.warning(
+                "Atualização local", "Atualizando o índice sem baixar fontes oficiais."
+            )
         )
         try:
             _prepare_with_progress()
@@ -347,7 +382,12 @@ def operator_run() -> None:
             _prepare_with_progress()
         except SetupError as error:
             if "três URLs" not in str(error):
-                console.print(f"Não foi possível retomar a preparação: {error}")
+                console.print(
+                    presentation.error(
+                        "Preparação interrompida",
+                        f"Não foi possível retomar a preparação: {error}",
+                    )
+                )
                 raise typer.Exit(code=1) from error
             try:
                 _prepare_with_progress(_ask_source_urls())

@@ -59,7 +59,13 @@ A opção 4 mostra evidências cross-source, sem alegar execução do Answer Con
 Complete estruturado. Projeções granulares permanecem para diagnóstico e
 benchmarks. Perguntas naturais são analisadas lexicalmente; escopo por evento,
 identidade técnica, atributos e relações pai/filho precedem a menção textual.
-O índice artificial não é exibido como se fosse conteúdo oficial. A opção 4
-mostra status de evidência separado por família. Zero hits produzem abstenção.
-Detalhes de UUID, manifest, build digest e parser revision continuam nos
-comandos administrativos/diagnósticos, não no caminho normal.
+O índice artificial não é exibido como se fosse conteúdo oficial. A camada
+`presentation.py` formata o conteúdo estrutural autorizado em painéis Rich por
+tipo de unidade, com atributos, fonte, path e score; ela não recupera nem
+persiste evidência. A opção 4 mostra blocos separados para MOS, Leiaute e XSD,
+incluindo ausência de evidência por fonte, sem conclusão artificial. Zero hits
+produzem aviso de abstenção, não erro técnico. A abertura mostra apenas estado
+e versões humanas; a opção **Status** separa visão geral, runtime e corpus,
+incluindo IDs e revisões para diagnóstico. O conteúdo permanece legível sem cor
+e em saída capturada. Detalhes adicionais de manifest e build digest continuam
+nos comandos administrativos.

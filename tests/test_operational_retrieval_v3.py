@@ -1,6 +1,8 @@
 from contextlib import contextmanager
+from io import StringIO
 
 import pytest
+from rich.console import Console
 from sqlalchemy import delete, func, select
 from test_layout_official_hotfix import _event, _s1005
 from test_mos_integration import build_fixture, cleanup, materialize_phase4_fixture
@@ -241,9 +243,11 @@ def test_generic_event_attribute_children_xsd_and_cross_source(tmp_path, monkeyp
             yield session
 
         monkeypatch.setattr(cli_module, "session_factory", lambda: current_session)
-        output = []
+        output = StringIO()
         monkeypatch.setattr(
-            cli_module.console, "print", lambda value, **_kw: output.append(str(value))
+            cli_module,
+            "console",
+            Console(file=output, force_terminal=False, color_system=None, width=110),
         )
         monkeypatch.setattr(
             cli_module.typer,
@@ -254,9 +258,11 @@ def test_generic_event_attribute_children_xsd_and_cross_source(tmp_path, monkeyp
         )
         cli_module._query_active("CROSS_SOURCE")
         assert all(
-            f"{family}: AVAILABLE" in output for family in ("MOS", "LAYOUT", "XSD")
+            f"{family}" in output.getvalue() for family in ("MOS", "LEIAUTE", "XSD")
         )
-        output.clear()
+        assert "Nenhuma evidência" not in output.getvalue()
+        output.seek(0)
+        output.truncate(0)
         monkeypatch.setattr(
             cli_module.typer,
             "prompt",
@@ -265,12 +271,13 @@ def test_generic_event_attribute_children_xsd_and_cross_source(tmp_path, monkeyp
             ),
         )
         cli_module._query_active("CROSS_SOURCE")
-        assert "MOS: NO_AUTHORIZED_EVIDENCE" in output
-        assert "LAYOUT: AVAILABLE" in output
-        assert "XSD: AVAILABLE" in output
-        assert not any("Abstenção:" in line for line in output)
-        assert not any("grupo_pai " in line or "event_code " in line for line in output)
-        output.clear()
+        assert "Nenhuma evidência autorizada encontrada no MOS" in output.getvalue()
+        assert "LEIAUTE" in output.getvalue() and "XSD" in output.getvalue()
+        assert "Nenhuma das fontes" not in output.getvalue()
+        assert "grupo_pai " not in output.getvalue()
+        assert "event_code " not in output.getvalue()
+        output.seek(0)
+        output.truncate(0)
         monkeypatch.setattr(
             cli_module.typer,
             "prompt",
@@ -278,18 +285,19 @@ def test_generic_event_attribute_children_xsd_and_cross_source(tmp_path, monkeyp
         )
         cli_module._query_active("CROSS_SOURCE")
         assert all(
-            f"{family}: NO_AUTHORIZED_EVIDENCE" in output
-            for family in ("MOS", "LAYOUT", "XSD")
+            f"Nenhuma evidência autorizada encontrada no {family}" in output.getvalue()
+            for family in ("MOS", "Leiaute", "XSD")
         )
-        assert any("Abstenção:" in line for line in output)
-        output.clear()
+        assert "Nenhuma evidência encontrada" in output.getvalue()
+        output.seek(0)
+        output.truncate(0)
         monkeypatch.setattr(
             cli_module.typer,
             "prompt",
             lambda *_args, **_kw: "condição do grupo alpha S-8888",
         )
         cli_module._query_active("LAYOUT_ALL")
-        assert any("Condition: OC" in line for line in output)
+        assert "Condição" in output.getvalue() and "OC" in output.getvalue()
     finally:
         session.rollback()
         session.execute(delete(ActiveRuntime))
