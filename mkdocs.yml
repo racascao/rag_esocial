@@ -1,0 +1,145 @@
+site_name: rag_esocial
+site_description: Plataforma local evidence-first de retrieval estruturado para a documentação oficial do eSocial, preparada para geração fundamentada.
+site_url: https://racascao.github.io/rag_esocial/
+repo_name: racascao/rag_esocial
+repo_url: https://github.com/racascao/rag_esocial
+edit_uri: edit/main/docs/
+site_dir: site
+
+extra_javascript:
+  - https://cdn.jsdelivr.net/npm/mermaid@11.12.0/dist/mermaid.min.js
+  - assets/javascripts/mermaid-init.js
+
+theme:
+  name: material
+  language: pt-BR
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: cyan
+      toggle:
+        icon: material/weather-sunny
+        name: Usar modo escuro
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: cyan
+      toggle:
+        icon: material/weather-night
+        name: Usar modo claro
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.path
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - toc.follow
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+nav:
+  - Início: index.md
+  - Começando:
+      - Visão geral: getting-started/overview.md
+      - Início rápido: getting-started/quickstart.md
+      - Primeira execução: getting-started/first-run.md
+      - Interface: getting-started/interface.md
+  - Guia de uso:
+      - MOS: user-guide/mos.md
+      - Leiaute: user-guide/layout.md
+      - XSD: user-guide/xsd.md
+      - Evidências cross-source: user-guide/cross-source.md
+      - Atualizar versão: user-guide/updating.md
+      - Status: user-guide/status.md
+  - Conceitos:
+      - Evidence-first: concepts/evidence-first.md
+      - RAG tradicional e rag_esocial: concepts/rag-traditional-vs-esocial.md
+      - Fontes e autoridade: concepts/sources-and-authority.md
+      - Identidade e citações: concepts/identity-and-citations.md
+      - Abstenção: concepts/abstention.md
+  - Arquitetura:
+      - Visão geral: architecture/overview.md
+      - Ingestão: architecture/ingestion.md
+      - Modelos das fontes: architecture/source-models.md
+      - Versionamento: architecture/versioning.md
+      - Retrieval: architecture/retrieval.md
+      - Evidência: architecture/evidence.md
+      - Facts e resolução: architecture/facts.md
+      - Runtime: architecture/runtime.md
+      - Complete Mode: architecture/complete-mode.md
+  - Operação:
+      - Ciclo de vida: operations/lifecycle.md
+      - Atualização: operations/version-update.md
+      - Diagnóstico: operations/diagnostics.md
+      - Backups: operations/backups.md
+      - Isolamento de testes: operations/test-isolation.md
+      - Troubleshooting: operations/troubleshooting.md
+  - Avaliação:
+      - Visão geral: evaluation/overview.md
+      - Q14: evaluation/q14.md
+      - Complete: evaluation/complete.md
+      - Métricas: evaluation/quality-model.md
+  - Desenvolvimento:
+      - Ambiente: development/environment.md
+      - Repositório: development/repository.md
+      - Testes: development/tests.md
+      - Migrations: development/migrations.md
+      - Quality gates: development/quality-gates.md
+      - Documentação: development/documentation.md
+  - Referência:
+      - Terminologia: reference/terminology.md
+      - Unidades das fontes: reference/source-units.md
+      - Revisões: reference/revisions.md
+      - Invariantes: reference/invariants.md
+  - Contratos e registros:
+      - Fundação: foundation.md
+      - Snapshot manifest: corpus_snapshot_manifest_v1.md
+      - Identidade do build: corpus_build_identity.md
+      - SearchProjection: search_projection.md
+      - Estrutura MOS: mos_structure.md
+      - Estrutura Leiaute: layout_structure.md
+      - Estrutura XSD: xsd_structure.md
+      - Fatos determinísticos: deterministic_facts.md
+      - Fact resolution: fact_resolution.md
+      - Evidence assembly: evidence_assembly.md
+      - Answer Contract: answer_contract.md
+      - UX operacional: operational_ux.md
+      - Retrieval operacional v3: operational_retrieval_v3.md
+      - Avaliação DEV: evaluation_dev.md
+      - Avaliação de facts: evaluation_fact_resolution_status.md
+      - Avaliação Q14 detalhada: evaluation_q14.md
+      - Avaliação Complete detalhada: evaluation_complete_mode.md
+      - Arquitetura Complete: phase9_complete_mode_architecture.md
+      - CLI Complete: phase9_complete_mode_cli.md
+      - Descoberta Complete: phase9_complete_mode_discovery.md
+      - Contrato de synthesis: phase9_synthesis_contract.md
+      - Plano de implementação 0–10: plano_implementacao_fases_0_10.md
+      - Validação final do MVP: mvp_final_validation.md
+  - Roadmap: roadmap.md

@@ -29,7 +29,7 @@ migration aditiva `0015_active_runtime`.
 
 Os reports congelados cobrem fake `26/26`, smoke live `1/1` e execução live
 `6/6`, todos com gates estruturais aprovados. O manifesto reproduzível está em
-[`evaluation/mvp/mvp_v1_manifest.json`](../evaluation/mvp/mvp_v1_manifest.json).
+`evaluation/mvp/mvp_v1_manifest.json` no diretório `evaluation/` do repositório.
 
 ## Limitações explícitas
 

@@ -8,6 +8,11 @@ fatos e não pode complementar lacunas com conhecimento paramétrico. O contexto
 formado apenas por `FactResolution` com status `RESOLVED` e pelo
 `EvidenceUnit.rendered_content` ligado por `FactResolutionSupport`.
 
+!!! info
+    Este é um contrato avançado de geração fundamentada. O menu operacional atual
+    de `./esocial` recupera e apresenta evidências; ele não aciona este pipeline
+    de geração para consultas normais.
+
 O preflight valida build, fonte, associação do request, status da resolução,
 membership do `EvidenceUnit` no `EvidenceSet`, membership do `CitationTarget` no
 build e a cadeia de suporte. Em seguida cria allowlists locais `F1..Fn` e

@@ -1,8 +1,17 @@
 # RAG eSocial
 
-O **RAG eSocial** é um assistente local, operado pelo terminal, para consultar a documentação oficial do eSocial. Ele reúne o Manual de Orientação do eSocial (MOS), os Leiautes e os schemas XSD sem reduzir as três fontes a uma coleção indistinta de trechos de texto.
+O **RAG eSocial** é uma plataforma local, operada pelo terminal e
+*evidence-first*, para consulta estruturada à documentação oficial do eSocial.
+O MVP operacional atual recupera e apresenta evidências citáveis do Manual de
+Orientação do eSocial (MOS), dos Leiautes e dos schemas XSD, sem reduzir as três
+fontes a uma coleção indistinta de trechos de texto.
 
-O projeto é *evidence-first*: cada resultado exibido conserva sua origem documental e seu path citável. A busca encontra candidatos, mas não os transforma automaticamente em fatos ou respostas. Quando falta evidência autorizada, o comportamento esperado é abster-se, não completar lacunas com a memória de um modelo.
+Cada resultado exibido conserva sua origem documental e seu path citável. A busca
+encontra candidatos, mas não os transforma automaticamente em fatos ou respostas.
+Quando falta evidência autorizada, o comportamento esperado é abster-se, não
+completar lacunas com a memória de um modelo. A arquitetura também contém geração
+fundamentada por LLM — incluindo Answer Contract e Complete Mode —, mas essa etapa
+ainda não faz parte do fluxo normal de consultas do menu `./esocial`.
 
 ## Tecnologias
 
@@ -23,6 +32,23 @@ O launcher constrói e inicia os containers, aguarda o banco, aplica migrations 
 A preparação baixa e valida os arquivos, calcula hashes, cria e congela um snapshot, materializa as estruturas MOS/Leiaute/XSD, constrói fatos e índices de busca e só então ativa o runtime. Uma interrupção pode ser retomada pelo mesmo launcher. Em execuções seguintes, o corpus ativo é reutilizado; uma atualização de versão oficial é solicitada explicitamente.
 
 Para encerrar, selecione **0. Sair**. Os dados persistidos continuam nos volumes Docker.
+
+## Documentação
+
+O portal completo reúne tutorial, guia operacional, arquitetura, avaliação e
+referência: [racascao.github.io/rag_esocial](https://racascao.github.io/rag_esocial/).
+Depois do primeiro deploy, ative **Settings → Pages → Build and deployment →
+Source: GitHub Actions** no repositório GitHub para publicar pelo workflow.
+
+Para revisar o portal localmente, sem Python no host:
+
+```sh
+docker compose run --rm -p 8000:8000 app \
+  uv run --group docs mkdocs serve -a 0.0.0.0:8000
+```
+
+Abra `http://localhost:8000` (redireciona para `/rag_esocial/`). O build estrito
+é `docker compose exec -T app uv run --group docs mkdocs build --strict`.
 
 ## Como usar
 
@@ -47,9 +73,9 @@ Nem todo atributo existe em toda fonte ou versão. Uma pergunta pode retornar me
 
 ## Por que não é apenas um RAG de chunks?
 
-| Abordagem comum | RAG eSocial |
+| Abordagem comum de RAG | rag_esocial — MVP operacional |
 | --- | --- |
-| Documento → chunks → embeddings → top-k → prompt | Fonte versionada → parse estrutural → identidade citável → retrieval determinístico → evidência autorizada → resposta ou abstenção |
+| Documento → chunks → embeddings → top-k → prompt | Fonte versionada → parse estrutural → identidade citável → retrieval determinístico → evidência autorizada → apresentação de evidências ou abstenção |
 | Trecho encontrado pode ser tratado como contexto genérico | Retrieval, evidência, resolução de fato e geração têm contratos distintos |
 | Posição física pode servir de referência | `CitationTarget` usa identidade estável de origem, não página ou linha |
 | Fontes são combinadas no mesmo contexto | MOS, Leiaute e XSD preservam estrutura e autoridade próprias |
@@ -95,7 +121,14 @@ O MVP não utiliza embeddings, busca vetorial, reranker neural, fine-tuning ou r
 
 ### Respostas avançadas e limites
 
-O repositório também contém Answer Contract single-source e Complete Mode com proveniência, validação e avaliação. São interfaces avançadas/diagnósticas, distintas da opção 4 do menu. Uma resposta gerada não vira evidência para outra. A experiência pública atual é `./esocial`; síntese cross-source no menu permanece futura, sem cronograma anunciado. Quando a estrutura necessária não está materializada nem pode ser derivada com segurança, o sistema falha fechado.
+O MVP público entrega retrieval estrutural, evidências citáveis e abstenção. O
+repositório também contém infraestrutura avançada de geração fundamentada — Answer
+Contract, Complete Mode e Ollama/`gemma4:12b` — com proveniência, validação e
+avaliação. Essas interfaces são distintas da opção 4 do menu, e uma resposta
+gerada não vira evidência para outra. A evolução prevista para a UX é ligar essa
+geração/síntese ao fluxo natural da CLI para oferecer uma resposta final amigável e
+citada; ela não é capacidade implícita do menu atual. Quando a estrutura necessária
+não está materializada nem pode ser derivada com segurança, o sistema falha fechado.
 
 ## Organização do repositório
 
